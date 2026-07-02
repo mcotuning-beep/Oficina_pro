@@ -549,16 +549,22 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
   });
 
-  // Gera o arquivo usando exatamente a mesma largura da Prévia visível.
-  // Antes o PDF usava 794px e a imagem usava window.innerWidth; por isso o envio
-  // ficava diferente do Preview. Agora a captura copia a largura real do iframe da Prévia.
-  const obterLarguraPreview = () => {
+  // Gera o arquivo usando exatamente a mesma área visível da Prévia.
+  // Antes a largura já estava correta, mas a altura era cortada no tamanho do conteúdo.
+  // No celular isso mudava a proporção da imagem enviada. Agora usamos a largura E a
+  // altura reais do iframe da Prévia, mantendo a mesma proporção vista na tela.
+  const obterDimensoesPreview = () => {
     const frame = previewFrameRef.current;
     if (frame) {
       const rect = frame.getBoundingClientRect();
-      if (rect.width) return Math.round(rect.width);
+      const width = Math.round(rect.width || window.innerWidth || 420);
+      const height = Math.round(rect.height || window.innerHeight || 700);
+      return { width, height };
     }
-    return Math.round(window.innerWidth || 420);
+    return {
+      width: Math.round(window.innerWidth || 420),
+      height: Math.round(window.innerHeight || 700)
+    };
   };
 
   const aguardarImagens = async (doc) => {
@@ -569,11 +575,13 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     })));
   };
 
-  const gerarCanvas = async (largura) => {
+  const gerarCanvas = async () => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
-    const larguraFinal = Math.round(largura || obterLarguraPreview());
+    const dimensoesPreview = obterDimensoesPreview();
+    const larguraFinal = Math.round(dimensoesPreview.width);
+    const alturaPreview = Math.round(dimensoesPreview.height);
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:"+alturaPreview+"px;border:none;background:#fff;";
     document.body.appendChild(iframe);
 
     const doc = iframe.contentDocument;
@@ -582,14 +590,24 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     doc.close();
 
     doc.documentElement.style.width = larguraFinal+"px";
+    doc.documentElement.style.minHeight = alturaPreview+"px";
     doc.body.style.width = larguraFinal+"px";
+    doc.body.style.minHeight = alturaPreview+"px";
     doc.body.style.margin = "0";
 
     await aguardarImagens(doc);
     await new Promise(r=>setTimeout(r,300));
 
-    const alturaFinal = Math.ceil(doc.body.scrollHeight);
+    // Mantém pelo menos a mesma altura visível da Prévia.
+    // Se a OS tiver muito conteúdo, aumenta para não cortar nada.
+    const alturaConteudo = Math.ceil(Math.max(
+      doc.body.scrollHeight || 0,
+      doc.documentElement.scrollHeight || 0
+    ));
+    const alturaFinal = Math.max(alturaPreview, alturaConteudo);
     iframe.style.height = alturaFinal+"px";
+    doc.documentElement.style.height = alturaFinal+"px";
+    doc.body.style.height = alturaFinal+"px";
 
     const canvas = await window.html2canvas(doc.body, {
       scale:2,
@@ -641,7 +659,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const canvas = await gerarCanvas(); // mesma largura real da Prévia
+      const canvas = await gerarCanvas(); // mesma largura e altura reais da Prévia
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
