@@ -30,12 +30,51 @@ const calcResultadoOS = os => {
   const custoPecas = Number(os?.custoPecas ?? calcCustoPecas(os));
   const outrosCustos = Number(os?.outrosCustos || 0);
   const liquido = Number(os?.totalLiquido ?? (bruto - desconto - taxas));
-  const lucro = liquido - custoPecas - outrosCustos;
+  const lucroCalculado = liquido - custoPecas - outrosCustos;
+  const lucro = os?.lucroReal !== undefined ? Number(os.lucroReal||0) : lucroCalculado;
   const baseMargem = Math.max(0.01, bruto - desconto);
-  return {bruto, desconto, taxas, custoPecas, outrosCustos, liquido, lucro, margem:(lucro/baseMargem)*100};
+  const margem = os?.margemReal !== undefined ? Number(os.margemReal||0) : (lucro/baseMargem)*100;
+  return {bruto, desconto, taxas, custoPecas, outrosCustos, liquido, lucro, margem};
 };
 const getConfig = () => { try { return JSON.parse(localStorage.getItem(K.config)||"{}"); } catch { return {}; } };
 const setConfig = v => localStorage.setItem(K.config, JSON.stringify({...getConfig(), ...v}));
+const getFeriados = () => {
+  const f = getConfig().feriadosOficina || [];
+  return Array.isArray(f) ? f : String(f||"").split(/[\n,; ]+/).map(x=>x.trim()).filter(Boolean);
+};
+const isFeriadoOficina = (dateStr) => {
+  const mmdd = (dateStr||"").slice(5);
+  const ddmm = mmdd ? mmdd.slice(3,5)+"-"+mmdd.slice(0,2) : "";
+  return getFeriados().includes(dateStr) || getFeriados().includes(mmdd) || getFeriados().includes(ddmm);
+};
+const isDiaUtilPadrao = (dateStr) => {
+  if(!dateStr) return false;
+  const d = new Date(dateStr + "T12:00:00");
+  const wd = d.getDay();
+  return wd >= 1 && wd <= 5 && !isFeriadoOficina(dateStr);
+};
+const diasMetaAte = (ano, mes, ateDateStr, ordens=[]) => {
+  const ultimo = new Date(ano, mes + 1, 0).getDate();
+  let limite = ultimo;
+  if(ateDateStr){
+    const ate = new Date(ateDateStr + "T12:00:00");
+    if(ate.getFullYear() === ano && ate.getMonth() === mes) limite = Math.min(ultimo, ate.getDate());
+    else if(ate < new Date(ano, mes, 1, 12)) limite = 0;
+  }
+  let dias = 0;
+  for(let dia=1; dia<=limite; dia++){
+    const ds = `${ano}-${String(mes+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
+    if(isDiaUtilPadrao(ds)) dias++;
+  }
+  const extras = new Set();
+  (ordens||[]).forEach(o=>{
+    const ds = dataRelatorio(o);
+    if(!ds || o?.status !== "Concluída" || !o?.contabilizarDiaMeta) return;
+    const d = new Date(ds + "T12:00:00");
+    if(d.getFullYear() === ano && d.getMonth() === mes && !isDiaUtilPadrao(ds)) extras.add(ds);
+  });
+  return dias + extras.size;
+};
 
 const TAXAS_PADRAO = [
   {id:"t0", nome:"Dinheiro",          parcelas:1,  taxa:0,     obs:"Sem taxa"},
@@ -287,10 +326,32 @@ function ModalPagamento({ os, onSave, onClose }) {
 
   const salvar = () => {
     const hojeStr = new Date().toISOString().slice(0,10);
-    const novaOS = {...os,pagamentos,status:"Concluída",totalBruto:total,totalLiquido:totalLiq,totalTaxas,desconto:parseFloat(desconto||0),custoPecas,outrosCustos:parseFloat(outrosCustos||0),dataConclusao:hojeStr};
+    let contabilizarDiaMeta = isDiaUtilPadrao(hojeStr);
+    if(!contabilizarDiaMeta){
+      contabilizarDiaMeta = window.confirm("Hoje não é um dia útil padrão da oficina. Deseja considerar este dia para a meta mensal?");
+    }
+    const outros = parseFloat(outrosCustos||0);
+    const lucroReal = totalLiq - custoPecas - outros;
+    const margemReal = (lucroReal / Math.max(0.01, totalComDesconto)) * 100;
+    const novaOS = {
+      ...os,
+      pagamentos,
+      status:"Concluída",
+      totalBruto:total,
+      totalLiquido:totalLiq,
+      totalTaxas,
+      desconto:parseFloat(desconto||0),
+      custoPecas,
+      outrosCustos:outros,
+      lucroReal,
+      margemReal,
+      dataConclusao:hojeStr,
+      fechadoEm:new Date().toISOString(),
+      contabilizarDiaMeta
+    };
     const ordens = db.get(K.ordens);
     db.set(K.ordens,[...ordens.filter(o=>o.id!==novaOS.id),novaOS]);
-    toast("Pagamento registrado! OS concluída.");
+    toast("Fechamento confirmado! OS concluída.");
     onSave(novaOS);
   };
 
@@ -2292,8 +2353,13 @@ function AbaAnalise(){
     const inicioHoje = today();
     const osHoje = comValor.filter(o => dataRelatorio(o) === inicioHoje);
     const lucroHoje = osHoje.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
-    const percMeta = metaNum > 0 ? Math.min(999, (lucroHoje/metaNum)*100) : 0;
-    const faltaMeta = Math.max(0, metaNum - lucroHoje);
+    const fimPeriodo = (periodo.m === hoje.getMonth() && periodo.a === hoje.getFullYear()) ? inicioHoje : `${periodo.a}-${String(periodo.m+1).padStart(2,"0")}-${String(new Date(periodo.a, periodo.m+1, 0).getDate()).padStart(2,"0")}`;
+    const diasMeta = diasMetaAte(periodo.a, periodo.m, fimPeriodo, comValor);
+    const metaAcumulada = metaNum * diasMeta;
+    const saldoMeta = lucroReal - metaAcumulada;
+    const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroReal/metaAcumulada)*100) : 0;
+    const faltaMeta = Math.max(0, metaAcumulada - lucroReal);
+    const feriadosTxt = (getConfig().feriadosOficina || []).join(", ");
 
     const mapa = {};
     comValor.forEach(o => {
@@ -2373,8 +2439,8 @@ function AbaAnalise(){
         <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
             <div>
-              <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta diária de lucro</div>
-              <div style={{fontSize:10,color:T.muted}}>Toque, digite sua meta e salve.</div>
+              <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta acumulada de lucro</div>
+              <div style={{fontSize:10,color:T.muted}}>Segunda a sexta. Sábado/domingo/feriado só entra se você confirmar no fechamento.</div>
             </div>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input type="number" value={metaDiaria} onChange={e=>setMetaDiaria(e.target.value)} placeholder="0,00"
@@ -2383,10 +2449,21 @@ function AbaAnalise(){
                 style={{background:T.blueLo,border:"1px solid "+T.blue+"66",borderRadius:8,color:T.blue,padding:"7px 10px",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
             </div>
           </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:8}}>
+            <div><div style={{fontSize:9,color:T.muted}}>Dias da meta</div><b style={{color:T.text}}>{metaNum>0?diasMeta:"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Meta acumulada</div><b style={{color:T.blue}}>{metaNum>0?fmtR(metaAcumulada):"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaAcumulada>0&&lucroReal>=metaAcumulada?T.green:T.accent}}>{metaAcumulada>0?percMeta.toFixed(0)+"%":"—"}</b></div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
             <div><div style={{fontSize:9,color:T.muted}}>Lucro hoje</div><b style={{color:lucroHoje>=0?T.green:T.red}}>{fmtR(lucroHoje)}</b></div>
-            <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaNum>0&&lucroHoje>=metaNum?T.green:T.accent}}>{metaNum>0?percMeta.toFixed(0)+"%":"—"}</b></div>
-            <div><div style={{fontSize:9,color:T.muted}}>Falta</div><b style={{color:faltaMeta>0?T.accent:T.green}}>{metaNum>0?fmtR(faltaMeta):"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Lucro acumulado</div><b style={{color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>{saldoMeta>=0?"Acima":"Falta"}</div><b style={{color:saldoMeta>=0?T.green:T.accent}}>{metaNum>0?fmtR(Math.abs(saldoMeta)):"—"}</b></div>
+          </div>
+          <div style={{marginTop:10,borderTop:"1px solid "+T.border,paddingTop:10}}>
+            <div style={{fontSize:10,color:T.muted,marginBottom:5}}>Feriados / dias fechados do mês <span style={{opacity:.75}}>(use AAAA-MM-DD ou MM-DD, separados por vírgula)</span></div>
+            <input defaultValue={feriadosTxt} placeholder="Ex.: 2026-07-09, 09-07"
+              onBlur={e=>{const arr=e.target.value.split(/[\n,; ]+/).map(x=>x.trim()).filter(Boolean); setConfig({feriadosOficina:arr});}}
+              style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"8px",fontSize:12,boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
           </div>
         </div>
         {rank.length === 0 ? (
