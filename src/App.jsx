@@ -236,6 +236,7 @@ function ModalNovoProduto({ nome, onSave, onClose }) {
 
 function ModalPagamento({ os, onSave, onClose }) {
   const total = calcTotal(os);
+  const previewFrameRef = useRef(null);
   const taxas = getTaxas();
   const mkPgto = () => ({id:uid(),taxaId:taxas[0]?.id||"",valor:""});
   const [pagamentos, setPagamentos] = useState(os.pagamentos?.length ? os.pagamentos : [mkPgto()]);
@@ -451,6 +452,7 @@ function ModalAgendarOS({ os, onClose }) {
 
 function ModalImpressao({ os, onClose }) {
   const total = calcTotal(os);
+  const previewFrameRef = useRef(null);
   const taxas = getTaxas();
   const itensRows = (os.itens||[]).map(i =>
     "<tr><td>"+i.descricao+"</td><td style='text-align:center'>"+i.qty+"</td><td style='text-align:right;font-weight:600'>R$ "+(parseFloat(i.venda||0)*i.qty).toFixed(2).replace(".",",")+"</td></tr>"
@@ -547,21 +549,55 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
   });
 
-  // Gera canvas a partir do HTML da OS
-  // largura: 794 = padrão A4 (impressão/PDF formal, usa @page A4 do CSS)
-  // largura dinâmica (window.innerWidth) = usada na imagem/compartilhamento, para bater exatamente
-  // com a largura da tela do usuário, igual ao container da prévia (iframe width:100%)
-  const gerarCanvas = async (largura = 794) => {
+  // Gera o arquivo usando exatamente a mesma largura da Prévia visível.
+  // Antes o PDF usava 794px e a imagem usava window.innerWidth; por isso o envio
+  // ficava diferente do Preview. Agora a captura copia a largura real do iframe da Prévia.
+  const obterLarguraPreview = () => {
+    const frame = previewFrameRef.current;
+    if (frame) {
+      const rect = frame.getBoundingClientRect();
+      if (rect.width) return Math.round(rect.width);
+    }
+    return Math.round(window.innerWidth || 420);
+  };
+
+  const aguardarImagens = async (doc) => {
+    const imgs = Array.from(doc.images || []);
+    await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    })));
+  };
+
+  const gerarCanvas = async (largura) => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const larguraFinal = Math.round(largura || obterLarguraPreview());
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+largura+"px;height:auto;border:none;background:#fff;";
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
     document.body.appendChild(iframe);
-    iframe.contentDocument.write(html);
-    iframe.contentDocument.close();
-    await new Promise(r=>setTimeout(r,900));
-    const canvas = await window.html2canvas(iframe.contentDocument.body, {
-      scale:2, useCORS:true, allowTaint:true,
-      width:largura, height:iframe.contentDocument.body.scrollHeight,
+
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    doc.documentElement.style.width = larguraFinal+"px";
+    doc.body.style.width = larguraFinal+"px";
+    doc.body.style.margin = "0";
+
+    await aguardarImagens(doc);
+    await new Promise(r=>setTimeout(r,300));
+
+    const alturaFinal = Math.ceil(doc.body.scrollHeight);
+    iframe.style.height = alturaFinal+"px";
+
+    const canvas = await window.html2canvas(doc.body, {
+      scale:2,
+      useCORS:true,
+      allowTaint:true,
+      windowWidth:larguraFinal,
+      width:larguraFinal,
+      height:alturaFinal,
       backgroundColor:"#ffffff"
     });
     document.body.removeChild(iframe);
@@ -572,12 +608,17 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     toast("Gerando PDF...");
     try {
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-      const canvas = await gerarCanvas(794); // padrão A4 - PDF formal
+      const canvas = await gerarCanvas();
       const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF("p","mm","a4");
-      const imgW = 210;
-      const imgH = (canvas.height * imgW) / canvas.width;
-      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",0,0,imgW,imgH);
+      const pdfW = canvas.width / 2;
+      const pdfH = canvas.height / 2;
+      const pdf = new jsPDF({
+        orientation: pdfW > pdfH ? "l" : "p",
+        unit: "px",
+        format: [pdfW, pdfH],
+        compress: true
+      });
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",0,0,pdfW,pdfH);
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".pdf";
 
       // Tenta compartilhar direto (Android/iPhone)
@@ -600,8 +641,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const larguraTela = Math.round(window.innerWidth || 420);
-      const canvas = await gerarCanvas(larguraTela); // largura real da tela do usuário - igual à prévia
+      const canvas = await gerarCanvas(); // mesma largura real da Prévia
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
@@ -643,7 +683,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
       </div>
       {/* iframe fullscreen */}
       <div style={{flex:1,overflow:"hidden"}}>
-        <iframe srcDoc={html} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia OS" />
+        <iframe ref={previewFrameRef} srcDoc={html} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia OS" />
       </div>
       <div style={{background:T.surface,borderTop:"1px solid "+T.border,
         padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
