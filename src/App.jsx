@@ -7,7 +7,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -21,7 +21,21 @@ const today = () => {
   return d.toISOString().slice(0,10);
 };
 const dataRelatorio = o => (o?.status === "Concluída" ? (o.dataConclusao || o.data) : o?.data) || "";
-const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0)+parseFloat(os.maoDeObra||0);
+const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*(parseFloat(i.qty||1)||1),0)+parseFloat(os.maoDeObra||0);
+const calcCustoPecas = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.custo||0)*(parseFloat(i.qty||1)||1),0);
+const calcResultadoOS = os => {
+  const bruto = Number(os?.totalBruto ?? calcTotal(os));
+  const desconto = Number(os?.desconto || 0);
+  const taxas = Number(os?.totalTaxas || 0);
+  const custoPecas = Number(os?.custoPecas ?? calcCustoPecas(os));
+  const outrosCustos = Number(os?.outrosCustos || 0);
+  const liquido = Number(os?.totalLiquido ?? (bruto - desconto - taxas));
+  const lucro = liquido - custoPecas - outrosCustos;
+  const baseMargem = Math.max(0.01, bruto - desconto);
+  return {bruto, desconto, taxas, custoPecas, outrosCustos, liquido, lucro, margem:(lucro/baseMargem)*100};
+};
+const getConfig = () => { try { return JSON.parse(localStorage.getItem(K.config)||"{}"); } catch { return {}; } };
+const setConfig = v => localStorage.setItem(K.config, JSON.stringify({...getConfig(), ...v}));
 
 const TAXAS_PADRAO = [
   {id:"t0", nome:"Dinheiro",          parcelas:1,  taxa:0,     obs:"Sem taxa"},
@@ -246,6 +260,7 @@ function ModalPagamento({ os, onSave, onClose }) {
   const mkPgto = () => ({id:uid(),taxaId:taxas[0]?.id||"",valor:""});
   const [pagamentos, setPagamentos] = useState(os.pagamentos?.length ? os.pagamentos : [mkPgto()]);
   const [desconto, setDesconto] = useState(os.desconto||"");
+  const [outrosCustos, setOutrosCustos] = useState(os.outrosCustos||"");
 
   const totalComDesconto = total - parseFloat(desconto||0);
   const soma = pagamentos.reduce((s,p)=>s+parseFloat(p.valor||0),0);
@@ -264,11 +279,15 @@ function ModalPagamento({ os, onSave, onClose }) {
   };
   const totalLiq = pagamentos.reduce((s,p)=>s+liqPgto(p),0);
   const totalTaxas = soma - totalLiq;
+  const custoPecas = calcCustoPecas(os);
+  const lucroPrevisto = totalLiq - custoPecas - parseFloat(outrosCustos||0);
+  const baseMargem = Math.max(0.01, totalComDesconto);
+  const margemPrevista = (lucroPrevisto / baseMargem) * 100;
   const ok = Math.abs(restante)<0.01;
 
   const salvar = () => {
     const hojeStr = new Date().toISOString().slice(0,10);
-    const novaOS = {...os,pagamentos,status:"Concluída",totalBruto:total,totalLiquido:totalLiq,totalTaxas,desconto:parseFloat(desconto||0),dataConclusao:hojeStr};
+    const novaOS = {...os,pagamentos,status:"Concluída",totalBruto:total,totalLiquido:totalLiq,totalTaxas,desconto:parseFloat(desconto||0),custoPecas,outrosCustos:parseFloat(outrosCustos||0),dataConclusao:hojeStr};
     const ordens = db.get(K.ordens);
     db.set(K.ordens,[...ordens.filter(o=>o.id!==novaOS.id),novaOS]);
     toast("Pagamento registrado! OS concluída.");
@@ -287,8 +306,8 @@ function ModalPagamento({ os, onSave, onClose }) {
             <div style={{fontSize:11,color:T.muted,marginBottom:2}}>💸 DESCONTO (R$)</div>
             <input type="number" value={desconto} onChange={e=>setDesconto(e.target.value)}
               placeholder="0,00"
-              style={{width:"100%",background:T.surface,border:"1px solid "+T.amber+"66",
-              borderRadius:8,color:T.amber,padding:"6px 10px",fontSize:16,fontWeight:900,
+              style={{width:"100%",background:T.surface,border:"1px solid "+T.accent+"66",
+              borderRadius:8,color:T.accent,padding:"6px 10px",fontSize:16,fontWeight:900,
               textAlign:"center",outline:"none",fontFamily:"inherit",colorScheme:"dark",
               boxSizing:"border-box"}}/>
           </div>
@@ -296,7 +315,7 @@ function ModalPagamento({ os, onSave, onClose }) {
         <div style={{background:T.bg,borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,textAlign:"center"}}>
           <div>
             <div style={{fontSize:11,color:T.muted,marginBottom:2}}>TOTAL C/ DESCONTO</div>
-            <div style={{fontSize:20,fontWeight:900,color:parseFloat(desconto||0)>0?T.amber:T.text}}>{fmtBRL(totalComDesconto)}</div>
+            <div style={{fontSize:20,fontWeight:900,color:parseFloat(desconto||0)>0?T.accent:T.text}}>{fmtBRL(totalComDesconto)}</div>
           </div>
           <div>
             <div style={{fontSize:11,color:T.muted,marginBottom:2}}>INFORMADO</div>
@@ -359,9 +378,53 @@ function ModalPagamento({ os, onSave, onClose }) {
           </div>
         )}
 
+        <div style={{background:T.surface,border:"1px solid "+T.green+"44",borderRadius:12,padding:14,display:"grid",gap:12}}>
+          <div>
+            <div style={{fontSize:11,color:T.green,fontWeight:900,textTransform:"uppercase",letterSpacing:.8}}>💰 Fechamento da OS</div>
+            <div style={{fontSize:10,color:T.muted,marginTop:2}}>Conferência interna antes de concluir. Esses valores alimentam a aba Análise.</div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:T.bg,borderRadius:9,padding:10}}>
+              <div style={{fontSize:10,color:T.muted}}>Venda bruta</div>
+              <b>{fmtBRL(total)}</b>
+            </div>
+            <div style={{background:T.bg,borderRadius:9,padding:10}}>
+              <div style={{fontSize:10,color:T.muted}}>Líquido após desconto/taxa</div>
+              <b style={{color:T.green}}>{fmtBRL(totalLiq)}</b>
+            </div>
+            <div style={{background:T.bg,borderRadius:9,padding:10}}>
+              <div style={{fontSize:10,color:T.muted}}>Custo das peças</div>
+              <b style={{color:T.red}}>- {fmtBRL(custoPecas)}</b>
+            </div>
+            <div style={{background:T.bg,borderRadius:9,padding:10}}>
+              <div style={{fontSize:10,color:T.muted,marginBottom:4}}>Outros custos</div>
+              <input type="number" value={outrosCustos} onChange={e=>setOutrosCustos(e.target.value)} placeholder="0,00"
+                style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:7,color:T.red,padding:"7px 8px",fontSize:14,fontWeight:900,boxSizing:"border-box",textAlign:"right",fontFamily:"inherit",colorScheme:"dark"}} />
+            </div>
+          </div>
+
+          <div style={{background:lucroPrevisto>=0?T.greenLo:T.redLo,border:"1px solid "+(lucroPrevisto>=0?T.green:T.red)+"44",borderRadius:10,padding:12,display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:11,color:T.muted}}>Lucro real previsto</div>
+              <div style={{fontSize:22,fontWeight:950,color:lucroPrevisto>=0?T.green:T.red}}>{fmtBRL(lucroPrevisto)}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:10,color:T.muted}}>Margem</div>
+              <b style={{fontSize:18,color:lucroPrevisto>=0?T.green:T.red}}>{margemPrevista.toFixed(1).replace(".",",")}%</b>
+            </div>
+          </div>
+
+          <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,color:T.muted,flexWrap:"wrap"}}>
+            <span>Desconto: <b style={{color:T.accent}}>- {fmtBRL(parseFloat(desconto||0))}</b></span>
+            <span>Taxas: <b style={{color:T.red}}>- {fmtBRL(totalTaxas)}</b></span>
+            <span>Peças puxadas automaticamente dos itens da OS</span>
+          </div>
+        </div>
+
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <Btn v="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn v="green" onClick={salvar} disabled={!ok}>✅ Confirmar e Concluir OS</Btn>
+          <Btn v="green" onClick={salvar} disabled={!ok}>✅ Salvar e Concluir OS</Btn>
         </div>
         {!ok && soma>0 && (
           <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>
@@ -1065,7 +1128,7 @@ function ConfirmarExclusao({ osId, onConfirm }) {
 
 function TelaOS({ os:ini, onSave, onClose }) {
   const mk = () => ({id:uid(),numero:null,placa:"",veiculo:"",ano:"",cliente:"",
-    telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",
+    telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",outrosCustos:"",
     status:"Aberta",tipo:"OS",data:today(),pagamentos:[]});
 
   const [os, setOs] = useState(ini||mk());
@@ -1135,6 +1198,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const delItem = id => setOs(o=>({...o,itens:o.itens.filter(i=>i.id!==id)}));
 
   const total = calcTotal(os);
+  const fechamento = calcResultadoOS(os);
 
   const salvarLocal = (osFinal) => {
     const f = osFinal||os;
@@ -1203,8 +1267,8 @@ function TelaOS({ os:ini, onSave, onClose }) {
                   if(anos&&anos.length===1) upd("ano",String(anos[0]));
                 }
               }}
-              style={{background:T.amberLo,border:"1px solid "+T.amber+"66",borderRadius:8,
-              color:T.amber,padding:"8px 6px",fontSize:13,outline:"none",fontFamily:"inherit",
+              style={{background:T.accentLo,border:"1px solid "+T.accent+"66",borderRadius:8,
+              color:T.accent,padding:"8px 6px",fontSize:13,outline:"none",fontFamily:"inherit",
               textAlign:"center",colorScheme:"dark",width:"100%",boxSizing:"border-box"}}/>
             {os.chassiDig&&(()=>{
               const anos=getAnoChassi(os.chassiDig);
@@ -1213,8 +1277,8 @@ function TelaOS({ os:ini, onSave, onClose }) {
                   {anos.map(a=>(
                     <button key={a} onClick={()=>upd("ano",String(a))}
                       style={{padding:"2px",borderRadius:5,border:"1px solid "+T.border,
-                      background:os.ano===String(a)?T.amberLo:"transparent",
-                      color:os.ano===String(a)?T.amber:T.muted,
+                      background:os.ano===String(a)?T.accentLo:"transparent",
+                      color:os.ano===String(a)?T.accent:T.muted,
                       cursor:"pointer",fontFamily:"inherit",fontSize:10}}>
                       {a}
                     </button>
@@ -1408,6 +1472,34 @@ function TelaOS({ os:ini, onSave, onClose }) {
           </div>
         </div>
       )}
+
+      <div style={{background:T.surface,border:"1px solid "+T.green+"44",borderRadius:12,padding:14,display:"grid",gap:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:T.green,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8}}>💰 Fechamento financeiro da OS</div>
+            <div style={{fontSize:10,color:T.muted,marginTop:2}}>Controle interno. Não aparece para o cliente.</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:10,color:T.muted}}>Lucro real</div>
+            <div style={{fontSize:18,fontWeight:900,color:fechamento.lucro>=0?T.green:T.red}}>{fmtBRL(fechamento.lucro)}</div>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div style={{background:T.bg,borderRadius:8,padding:9}}><div style={{fontSize:10,color:T.muted}}>Venda bruta</div><b>{fmtBRL(fechamento.bruto)}</b></div>
+          <div style={{background:T.bg,borderRadius:8,padding:9}}><div style={{fontSize:10,color:T.muted}}>Líquido após desconto/taxa</div><b style={{color:T.green}}>{fmtBRL(fechamento.liquido)}</b></div>
+          <div style={{background:T.bg,borderRadius:8,padding:9}}><div style={{fontSize:10,color:T.muted}}>Custo das peças</div><b style={{color:T.red}}>- {fmtBRL(fechamento.custoPecas)}</b></div>
+          <div style={{background:T.bg,borderRadius:8,padding:9}}>
+            <div style={{fontSize:10,color:T.muted}}>Outros custos</div>
+            <input type="number" value={os.outrosCustos||""} onChange={e=>upd("outrosCustos",e.target.value)} placeholder="0,00"
+              style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:7,color:T.red,padding:"6px 8px",fontSize:13,fontWeight:800,boxSizing:"border-box",textAlign:"right",fontFamily:"inherit",colorScheme:"dark"}} />
+          </div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.muted,borderTop:"1px solid "+T.border,paddingTop:8}}>
+          <span>Desconto: <b style={{color:T.accent}}>- {fmtBRL(fechamento.desconto)}</b></span>
+          <span>Taxas: <b style={{color:T.red}}>- {fmtBRL(fechamento.taxas)}</b></span>
+          <span>Margem: <b style={{color:fechamento.margem>=0?T.green:T.red}}>{fechamento.margem.toFixed(1).replace(".",",")}%</b></span>
+        </div>
+      </div>
 
       <div>
         <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:4}}>Observações</label>
@@ -1696,12 +1788,12 @@ function AbaOrdens({ nivelAcesso }) {
       </div>
 
       {filtroStatus==="Aberta"&&filtradas.length>0&&(
-        <div style={{background:T.amberLo,border:"1px solid "+T.amber+"44",borderRadius:10,
+        <div style={{background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:10,
           padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:12,color:T.amber,fontWeight:700}}>
+          <span style={{fontSize:12,color:T.accent,fontWeight:700}}>
             💰 {filtradas.length} OS em aberto
           </span>
-          <span style={{fontSize:15,fontWeight:900,color:T.amber}}>
+          <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
             {fmtBRL(filtradas.reduce((s,o)=>s+calcTotal(o),0))}
           </span>
         </div>
@@ -2164,6 +2256,7 @@ function AbaAnalise(){
   const MESES_F = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const hoje = new Date();
   const [periodo, setPeriodo] = useState({m: hoje.getMonth(), a: hoje.getFullYear()});
+  const [metaDiaria, setMetaDiaria] = useState(getConfig().metaDiariaLucro || "");
 
   const navMes = (dir) => {
     setPeriodo(p => {
@@ -2188,17 +2281,23 @@ function AbaAnalise(){
     });
     const comValor = doMes.filter(o => calcTotal(o) > 0 && o.status === "Concluída");
     const totalFat = comValor.reduce((s,o) => s + calcTotal(o), 0);
-    const ticket = comValor.length > 0 ? totalFat / comValor.length : 0;
-    // Total taxas maquininha - salvo diretamente em o.totalTaxas
     const totalTaxas = comValor.reduce((s,o) => s + Number(o.totalTaxas||0), 0);
-    // Total descontos
     const totalDescontos = comValor.reduce((s,o) => s + Number(o.desconto||0), 0);
-    // Líquido real = Faturado - Taxa - Desconto (matemática simples e correta)
-    const liquidoFinal = totalFat - totalTaxas - totalDescontos;
+    const totalCustoPecas = comValor.reduce((s,o) => s + calcResultadoOS(o).custoPecas, 0);
+    const totalOutrosCustos = comValor.reduce((s,o) => s + calcResultadoOS(o).outrosCustos, 0);
+    const liquidoFinal = comValor.reduce((s,o) => s + calcResultadoOS(o).liquido, 0);
+    const lucroReal = comValor.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
+    const lucroMedio = comValor.length > 0 ? lucroReal / comValor.length : 0;
+    const metaNum = Number(metaDiaria||0);
+    const inicioHoje = today();
+    const osHoje = comValor.filter(o => dataRelatorio(o) === inicioHoje);
+    const lucroHoje = osHoje.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
+    const percMeta = metaNum > 0 ? Math.min(999, (lucroHoje/metaNum)*100) : 0;
+    const faltaMeta = Math.max(0, metaNum - lucroHoje);
 
     const mapa = {};
     comValor.forEach(o => {
-      const valor = calcTotal(o);
+      const valor = calcResultadoOS(o).lucro;
       const servico = String(o.servicos || "").trim() || (o.itens && o.itens[0]?.descricao) || "";
       // Remove valores R$ e pega só o nome do serviço (até 35 chars)
       const limpo = servico
@@ -2236,7 +2335,7 @@ function AbaAnalise(){
           {[
             {l:"OS",v:comValor.length,c:T.green,big:true},
             {l:"Faturado",v:fmtR(totalFat),c:T.accent},
-            {l:"Média/OS",v:fmtR(ticket),c:T.blue},
+            {l:"Lucro Médio/OS",v:fmtR(lucroMedio),c:T.blue},
           ].map(x=>(
             <div key={x.l} style={{background:T.card,border:"1px solid "+T.border,
               borderRadius:10,padding:"10px 6px",textAlign:"center"}}>
@@ -2251,14 +2350,44 @@ function AbaAnalise(){
             <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Taxa Maquininha</div>
             <div style={{fontSize:13,fontWeight:900,color:T.red}}>{totalTaxas>0?"-"+fmtR(totalTaxas):"—"}</div>
           </div>
-          <div style={{background:T.amberLo||T.redLo,border:"1px solid "+T.accent+"33",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+          <div style={{background:T.accentLo||T.redLo,border:"1px solid "+T.accent+"33",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
             <div style={{fontSize:9,color:T.muted,marginBottom:4}}>💸 Descontos</div>
             <div style={{fontSize:13,fontWeight:900,color:T.accent}}>{totalDescontos>0?"-"+fmtR(totalDescontos):"—"}</div>
           </div>
         </div>
-        <div style={{background:T.greenLo,border:"1px solid "+T.green+"33",borderRadius:10,padding:"10px 8px",textAlign:"center",marginBottom:14}}>
-          <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Líquido Real (já descontado taxa + desconto)</div>
-          <div style={{fontSize:16,fontWeight:900,color:T.green}}>{fmtR(liquidoFinal)}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <div style={{background:T.redLo,border:"1px solid "+T.red+"33",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Custo das Peças</div>
+            <div style={{fontSize:13,fontWeight:900,color:T.red}}>{totalCustoPecas>0?"-"+fmtR(totalCustoPecas):"—"}</div>
+          </div>
+          <div style={{background:T.redLo,border:"1px solid "+T.red+"22",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Outros Custos</div>
+            <div style={{fontSize:13,fontWeight:900,color:T.red}}>{totalOutrosCustos>0?"-"+fmtR(totalOutrosCustos):"—"}</div>
+          </div>
+        </div>
+        <div style={{background:T.greenLo,border:"1px solid "+T.green+"33",borderRadius:10,padding:"10px 8px",textAlign:"center",marginBottom:8}}>
+          <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Lucro Real do Mês</div>
+          <div style={{fontSize:18,fontWeight:900,color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</div>
+          <div style={{fontSize:10,color:T.muted,marginTop:3}}>Líquido: {fmtR(liquidoFinal)}</div>
+        </div>
+        <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
+            <div>
+              <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta diária de lucro</div>
+              <div style={{fontSize:10,color:T.muted}}>Toque, digite sua meta e salve.</div>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="number" value={metaDiaria} onChange={e=>setMetaDiaria(e.target.value)} placeholder="0,00"
+                style={{width:95,background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"7px 8px",fontSize:13,fontWeight:800,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
+              <button onClick={()=>{setConfig({metaDiariaLucro:metaDiaria});toast("Meta diária salva!");}}
+                style={{background:T.blueLo,border:"1px solid "+T.blue+"66",borderRadius:8,color:T.blue,padding:"7px 10px",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+            <div><div style={{fontSize:9,color:T.muted}}>Lucro hoje</div><b style={{color:lucroHoje>=0?T.green:T.red}}>{fmtR(lucroHoje)}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaNum>0&&lucroHoje>=metaNum?T.green:T.accent}}>{metaNum>0?percMeta.toFixed(0)+"%":"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Falta</div><b style={{color:faltaMeta>0?T.accent:T.green}}>{metaNum>0?fmtR(faltaMeta):"—"}</b></div>
+          </div>
         </div>
         {rank.length === 0 ? (
           <div style={{textAlign:"center",color:T.muted,padding:40}}>
