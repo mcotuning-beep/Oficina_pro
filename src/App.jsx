@@ -548,17 +548,20 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   });
 
   // Gera canvas a partir do HTML da OS
-  const gerarCanvas = async () => {
+  // largura: 794 = padrão A4 (impressão/PDF formal, usa @page A4 do CSS)
+  // largura: 420 = padrão celular (imagem/compartilhamento) - o CSS interno (fontes 8-11px) foi calibrado
+  // para essa largura estreita, igual ao container da prévia em tela (iframe width:100%)
+  const gerarCanvas = async (largura = 794) => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:auto;border:none;background:#fff;";
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+largura+"px;height:auto;border:none;background:#fff;";
     document.body.appendChild(iframe);
     iframe.contentDocument.write(html);
     iframe.contentDocument.close();
     await new Promise(r=>setTimeout(r,900));
     const canvas = await window.html2canvas(iframe.contentDocument.body, {
       scale:2, useCORS:true, allowTaint:true,
-      width:794, height:iframe.contentDocument.body.scrollHeight,
+      width:largura, height:iframe.contentDocument.body.scrollHeight,
       backgroundColor:"#ffffff"
     });
     document.body.removeChild(iframe);
@@ -569,7 +572,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     toast("Gerando PDF...");
     try {
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-      const canvas = await gerarCanvas();
+      const canvas = await gerarCanvas(794); // padrão A4 - PDF formal
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF("p","mm","a4");
       const imgW = 210;
@@ -597,7 +600,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const canvas = await gerarCanvas();
+      const canvas = await gerarCanvas(420); // padrão celular - igual à prévia na tela
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
