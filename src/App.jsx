@@ -549,8 +549,8 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
 
   // Gera canvas a partir do HTML da OS
   // largura: 794 = padrão A4 (impressão/PDF formal, usa @page A4 do CSS)
-  // largura: 420 = padrão celular (imagem/compartilhamento) - o CSS interno (fontes 8-11px) foi calibrado
-  // para essa largura estreita, igual ao container da prévia em tela (iframe width:100%)
+  // largura dinâmica (window.innerWidth) = usada na imagem/compartilhamento, para bater exatamente
+  // com a largura da tela do usuário, igual ao container da prévia (iframe width:100%)
   const gerarCanvas = async (largura = 794) => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
     const iframe = document.createElement("iframe");
@@ -600,7 +600,8 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const canvas = await gerarCanvas(420); // padrão celular - igual à prévia na tela
+      const larguraTela = Math.round(window.innerWidth || 420);
+      const canvas = await gerarCanvas(larguraTela); // largura real da tela do usuário - igual à prévia
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
