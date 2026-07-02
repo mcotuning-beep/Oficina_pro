@@ -15,7 +15,12 @@ const db = {
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtBRL = v => "R$ "+parseFloat(v||0).toFixed(2).replace(".",",");
 const fmtDate = d => d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "-";
-const today = () => new Date().toISOString().slice(0,10);
+const today = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+};
+const dataRelatorio = o => (o?.status === "Concluída" ? (o.dataConclusao || o.data) : o?.data) || "";
 const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0)+parseFloat(os.maoDeObra||0);
 
 const TAXAS_PADRAO = [
@@ -534,26 +539,10 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
 
 </body></html>`;
 
-  const imprimir = async () => {
-    toast("Preparando impressão...");
-    try {
-      // Imprime a mesma captura usada na imagem/PDF, mantendo largura e altura da Prévia.
-      const canvas = await gerarCanvas();
-      const img = canvas.toDataURL("image/png");
-      const w = window.open("","_blank","width=800,height=600");
-      w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imprimir OS</title>
-        <style>
-          *{box-sizing:border-box} body{margin:0;background:#fff}
-          img{display:block;width:100%;height:auto}
-          @page{margin:0;size:auto}
-          @media print{body{margin:0} img{width:100%;height:auto;page-break-inside:avoid}}
-        </style></head><body><img src="${img}" /></body></html>`);
-      w.document.close();
-      w.focus();
-      setTimeout(()=>w.print(),500);
-    } catch(e) {
-      if (e.name!=="AbortError") alert("Erro ao preparar impressão: "+e.message);
-    }
+  const imprimir = () => {
+    const w = window.open("","_blank","width=800,height=600");
+    w.document.write(html); w.document.close(); w.focus();
+    setTimeout(()=>w.print(),400);
   };
 
   const loadScript = (src) => new Promise((res,rej)=>{
@@ -565,25 +554,16 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
   });
 
-  // Gera o arquivo usando exatamente o mesmo tamanho visível da Prévia.
-  // Antes a imagem/PDF copiava só a largura e usava a altura do conteúdo; no celular
-  // isso deixava o arquivo enviado mais baixo que a tela da Prévia. Agora copiamos
-  // largura E altura do iframe visível, mantendo a mesma proporção da Prévia.
-  const obterTamanhoPreview = () => {
+  // Gera o arquivo usando exatamente a mesma largura da Prévia visível.
+  // Antes o PDF usava 794px e a imagem usava window.innerWidth; por isso o envio
+  // ficava diferente do Preview. Agora a captura copia a largura real do iframe da Prévia.
+  const obterLarguraPreview = () => {
     const frame = previewFrameRef.current;
     if (frame) {
       const rect = frame.getBoundingClientRect();
-      if (rect.width && rect.height) {
-        return {
-          largura: Math.round(rect.width),
-          altura: Math.round(rect.height)
-        };
-      }
+      if (rect.width) return Math.round(rect.width);
     }
-    return {
-      largura: Math.round(window.innerWidth || 420),
-      altura: Math.round(window.innerHeight || 720)
-    };
+    return Math.round(window.innerWidth || 420);
   };
 
   const aguardarImagens = async (doc) => {
@@ -594,14 +574,11 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     })));
   };
 
-  const gerarCanvas = async (largura, altura) => {
+  const gerarCanvas = async (largura) => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
-    const tamanhoPreview = obterTamanhoPreview();
-    const larguraFinal = Math.round(largura || tamanhoPreview.largura);
-    const alturaPreview = Math.round(altura || tamanhoPreview.altura);
-
+    const larguraFinal = Math.round(largura || obterLarguraPreview());
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:"+alturaPreview+"px;border:none;background:#fff;";
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
     document.body.appendChild(iframe);
 
     const doc = iframe.contentDocument;
@@ -610,32 +587,20 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     doc.close();
 
     doc.documentElement.style.width = larguraFinal+"px";
-    doc.documentElement.style.minHeight = alturaPreview+"px";
     doc.body.style.width = larguraFinal+"px";
-    doc.body.style.minHeight = alturaPreview+"px";
     doc.body.style.margin = "0";
 
     await aguardarImagens(doc);
     await new Promise(r=>setTimeout(r,300));
 
-    // Usa a altura da Prévia como mínimo para manter a proporção da tela.
-    // Se a OS tiver muitos itens e o conteúdo for maior, aumenta para não cortar.
-    const alturaConteudo = Math.ceil(Math.max(
-      doc.body.scrollHeight,
-      doc.documentElement.scrollHeight,
-      alturaPreview
-    ));
-    const alturaFinal = Math.max(alturaPreview, alturaConteudo);
+    const alturaFinal = Math.ceil(doc.body.scrollHeight);
     iframe.style.height = alturaFinal+"px";
-    doc.documentElement.style.height = alturaFinal+"px";
-    doc.body.style.height = alturaFinal+"px";
 
     const canvas = await window.html2canvas(doc.body, {
       scale:2,
       useCORS:true,
       allowTaint:true,
       windowWidth:larguraFinal,
-      windowHeight:alturaFinal,
       width:larguraFinal,
       height:alturaFinal,
       backgroundColor:"#ffffff"
@@ -982,7 +947,14 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [aiLoad, setAiLoad] = useState(false);
   const [aiResp, setAiResp] = useState("");
 
-  const upd = (k,v) => setOs(o=>({...o,[k]:v}));
+  const upd = (k,v) => setOs(o=>{
+    const novo = {...o,[k]:v};
+    if (k === "status") {
+      if (v === "Concluída" && o.status !== "Concluída" && !novo.dataConclusao) novo.dataConclusao = today();
+      if (v !== "Concluída") delete novo.dataConclusao;
+    }
+    return novo;
+  });
 
   const aplicarVoz = dados => {
     setOs(o => ({...o,
@@ -1049,7 +1021,11 @@ function TelaOS({ os:ini, onSave, onClose }) {
     }
     const ordens = db.get(K.ordens);
     const maxN = Math.max(0,...ordens.map(o=>o.numero||0));
-    const final = {...f,numero:f.numero||(maxN+1)};
+    const final = {
+      ...f,
+      numero:f.numero||(maxN+1),
+      ...(f.status === "Concluída" ? {dataConclusao: f.dataConclusao || today()} : {dataConclusao: undefined})
+    };
     db.set(K.ordens,[...ordens.filter(o=>o.id!==final.id),final]);
     setOs(final);
     return final;
@@ -1834,7 +1810,7 @@ function AbaRelatorios() {
   const ordens = db.get(K.ordens).filter(o=>o.status==="Concluída");
 
   const calcPer = (lista,ini,fim) => {
-    const f = lista.filter(o=>o.data>=ini&&o.data<=fim);
+    const f = lista.filter(o=>{ const dr = dataRelatorio(o); return dr>=ini&&dr<=fim; });
     const bruto = f.reduce((s,o)=>s+calcTotal(o),0);
     const liquido = f.reduce((s,o)=>s+(o.totalLiquido||calcTotal(o)),0);
     const taxas = f.reduce((s,o)=>s+(o.totalTaxas||0),0);
@@ -1853,7 +1829,7 @@ function AbaRelatorios() {
   for (let i=29;i>=0;i--) {
     const dd = new Date(); dd.setDate(dd.getDate()-i);
     const ds = dd.toISOString().slice(0,10);
-    const f = ordens.filter(o=>o.data===ds);
+    const f = ordens.filter(o=>dataRelatorio(o)===ds);
     dias30.push({
       d:dd.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}),
       v:f.reduce((s,o)=>s+calcTotal(o),0)
@@ -1925,7 +1901,7 @@ function AbaRelatorios() {
       {mes.ordens.length>0 && (
         <div>
           <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>OS concluídas no mês</div>
-          {mes.ordens.sort((a,b)=>b.data.localeCompare(a.data)).map(os => {
+          {mes.ordens.sort((a,b)=>dataRelatorio(b).localeCompare(dataRelatorio(a))).map(os => {
             const t = calcTotal(os);
             return (
               <Card key={os.id} style={{marginBottom:6,padding:"10px 14px"}}>
@@ -1933,7 +1909,7 @@ function AbaRelatorios() {
                   <div>
                     <span style={{fontWeight:700,color:T.accent,marginRight:8}}>#{String(os.numero).padStart(4,"0")}</span>
                     <span>{os.placa}</span>
-                    <span style={{color:T.muted,fontSize:12,marginLeft:8}}>{os.cliente} · {fmtDate(os.data)}</span>
+                    <span style={{color:T.muted,fontSize:12,marginLeft:8}}>{os.cliente} · {fmtDate(dataRelatorio(os))}</span>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <span style={{fontWeight:800,color:T.green}}>{fmtBRL(t)}</span>
@@ -2075,7 +2051,7 @@ function AbaAnalise(){
     const todas = db.get(K.ordens) || [];
     const doMes = todas.filter(o => {
       if(!o) return false;
-      const dataRef = o.status === "Concluída" ? (o.dataConclusao || o.data) : o.data;
+      const dataRef = dataRelatorio(o);
       if(!dataRef) return false;
       const d = new Date(dataRef + "T12:00:00");
       return d.getMonth() === periodo.m && d.getFullYear() === periodo.a;
