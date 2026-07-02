@@ -504,6 +504,35 @@ body.a4-mode{padding:0;overflow:visible}
 body.a4-mode .doc-page{width:794px;min-height:1123px;border:1.5px solid #d1d5db;border-radius:10px;padding:18px;background:#fff;display:flex}
 body.a4-mode .doc-inner{width:100%;min-height:1087px;display:flex;flex-direction:column}
 body.a4-mode .thanks{margin-top:auto}
+body.a4-mode{font-size:13px;line-height:1.45}
+body.a4-mode .doc-page{padding:20px}
+body.a4-mode .doc-inner{padding:14px;min-height:1079px}
+body.a4-mode .hdr{padding-bottom:12px;margin-bottom:12px}
+body.a4-mode .logo-img{width:58px;height:58px}
+body.a4-mode .empresa{gap:12px}
+body.a4-mode .enome{font-size:20px}
+body.a4-mode .edet{font-size:12px;line-height:1.55}
+body.a4-mode .os-box{font-size:12px}
+body.a4-mode .os-box b{font-size:17px}
+body.a4-mode .cli{font-size:13px;margin-bottom:12px;padding-bottom:10px}
+body.a4-mode .cli-row{gap:22px;margin-bottom:5px}
+body.a4-mode .lb{font-size:11px}
+body.a4-mode .sec{font-size:11px;margin:10px 0 7px;padding-bottom:5px}
+body.a4-mode th{font-size:12px;padding:7px 9px}
+body.a4-mode td{font-size:12.5px;padding:7px 9px;line-height:1.35}
+body.a4-mode .tot{font-size:21px;margin-top:10px;padding-top:8px}
+body.a4-mode .warranty-box{padding:13px 15px;margin-top:12px;margin-bottom:12px;gap:14px}
+body.a4-mode .warranty-icon{font-size:34px}
+body.a4-mode .warranty-title{font-size:13px;margin-bottom:4px}
+body.a4-mode .warranty-text{font-size:12.5px;line-height:1.5}
+body.a4-mode .info-grid{gap:12px;margin:12px 0}
+body.a4-mode .info-card{padding:12px}
+body.a4-mode .info-title{font-size:11px;margin-bottom:6px}
+body.a4-mode .info-value{font-size:14px}
+body.a4-mode .obs-box{font-size:12.5px;line-height:1.55;padding:10px 14px;margin:10px 0;border-left-width:4px}
+body.a4-mode .thanks{font-size:19px;margin:14px 0 6px}
+body.a4-mode .brand-foot{font-size:12px;margin-bottom:8px}
+body.a4-mode .foot{font-size:11.5px;padding-top:10px;margin-top:10px;gap:12px}
 .doc-page{width:100%;min-height:calc(100vh - 24px);border:1.5px solid #d1d5db;border-radius:10px;padding:10px;background:#fff}
 .doc-inner{border:1.5px solid #16a34a33;border-radius:8px;padding:10px;background:#fff}
 .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:8px}
@@ -537,7 +566,7 @@ tr:nth-child(even) td{background:#fafafa}
 .foot{border-top:1px dashed #ddd;padding-top:7px;margin-top:8px;display:flex;justify-content:space-between;gap:8px;font-size:8px;color:#555}
 @media(max-width:420px){.info-grid{grid-template-columns:1fr}.foot{display:block}.foot div{margin-bottom:4px}}
 @page{size:A4;margin:0}
-@media print{body{padding:0!important;margin:0!important;width:210mm;height:297mm;overflow:hidden}.doc-page{width:210mm!important;height:297mm!important;min-height:297mm!important;border:1px solid #d1d5db;border-radius:6px;padding:6mm!important;display:flex}.doc-inner{width:100%;min-height:100%;border:1px solid #16a34a33;border-radius:5px;display:flex;flex-direction:column}.thanks{margin-top:auto}}
+@media print{body{padding:0!important;margin:0!important;width:210mm;height:297mm;overflow:hidden}.doc-page{width:210mm!important;height:297mm!important;min-height:297mm!important;border:1px solid #d1d5db;border-radius:6px;padding:6mm!important;display:flex}.doc-inner{width:100%;min-height:100%;border:1px solid #16a34a33;border-radius:5px;display:flex;flex-direction:column;padding:4mm!important}.thanks{margin-top:auto}}
 </style></head><body>
 <div class="doc-page"><div class="doc-inner">
 <div class="hdr">
