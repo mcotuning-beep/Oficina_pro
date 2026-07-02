@@ -468,6 +468,24 @@ function ModalImpressao({ os, onClose }) {
     return "<tr><td>"+(taxa?.nome||"—")+"</td><td style='text-align:right'>R$ "+parseFloat(p.valor||0).toFixed(2).replace(".",",")+"</td><td style='text-align:right;color:#16a34a'>R$ "+liq.toFixed(2).replace(".",",")+"</td></tr>";
   }).join("");
 
+  const garantiaMeses = parseInt(os.garantiaMeses || 0);
+  const garantiaTexto = garantiaMeses > 0
+    ? (garantiaMeses + " " + (garantiaMeses === 1 ? "mês" : "meses"))
+    : "Não informada";
+  const garantiaValidade = (() => {
+    if (!garantiaMeses || !os.data) return "";
+    const d = new Date(os.data + "T12:00:00");
+    d.setMonth(d.getMonth() + garantiaMeses);
+    return d.toLocaleDateString("pt-BR");
+  })();
+  const dataConclusaoTexto = fmtDate(os.dataConclusao || os.data);
+  const formaPagamentoTexto = (os.pagamentos||[]).length
+    ? (os.pagamentos||[]).map(p => {
+        const taxa = taxas.find(t=>t.id===p.taxaId);
+        return taxa?.nome || "Pagamento";
+      }).join(" / ")
+    : "Não informado";
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>OS #${os.numero}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -490,7 +508,18 @@ td{padding:3px 6px;border-bottom:1px solid #f0f0f0;font-size:8.5px;line-height:1
 tr:nth-child(even) td{background:#fafafa}
 .tot{display:flex;justify-content:space-between;font-size:12px;font-weight:900;margin-top:6px;padding-top:5px;border-top:2px solid #111}
 .obs-box{background:#fffbeb;border-left:3px solid #d97706;padding:5px 9px;margin:6px 0;font-size:8.5px;line-height:1.4}
-.foot{display:none}
+.warranty-box{display:flex;gap:10px;align-items:flex-start;background:linear-gradient(90deg,#fff7ed,#fff);border:1px solid #f59e0b;border-radius:8px;padding:9px 10px;margin-top:8px;margin-bottom:8px;page-break-inside:avoid}
+.warranty-icon{font-size:24px;line-height:1;color:#d97706;flex:0 0 auto}
+.warranty-title{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#d97706;margin-bottom:2px}
+.warranty-text{font-size:8.5px;line-height:1.45;color:#222}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;page-break-inside:avoid}
+.info-card{border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff}
+.info-title{font-size:7.5px;font-weight:900;text-transform:uppercase;letter-spacing:.6px;color:#555;margin-bottom:3px}
+.info-value{font-size:9.5px;font-weight:700;color:#111}
+.thanks{text-align:center;margin:10px 0 4px;font-size:13px;font-style:italic;color:#111}
+.brand-foot{text-align:center;font-size:8.5px;font-weight:700;color:#444;margin-bottom:4px}.brand-foot span{color:#d97706}
+.foot{border-top:1px dashed #ddd;padding-top:7px;margin-top:8px;display:flex;justify-content:space-between;gap:8px;font-size:8px;color:#555}
+@media(max-width:420px){.info-grid{grid-template-columns:1fr}.foot{display:block}.foot div{margin-bottom:4px}}
 @page{size:A4;margin:1cm}
 @media print{body{padding:0}}
 </style></head><body>
@@ -534,8 +563,28 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
 
 <div class="tot"><span>Total</span><span>R$ ${total.toFixed(2).replace(".",",")}</span></div>
 
-${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"</div>":""}
+<div class="warranty-box">
+  <div class="warranty-icon">🛡️</div>
+  <div>
+    <div class="warranty-title">Garantia</div>
+    <div class="warranty-text"><b>Prazo:</b> ${garantiaTexto}${garantiaValidade ? " — válida até " + garantiaValidade : ""}</div>
+    <div class="warranty-text">A garantia cobre exclusivamente os serviços e materiais descritos nesta Ordem de Serviço. Não cobre desgaste natural, mau uso, acidentes, adaptações ou serviços realizados por terceiros.</div>
+  </div>
+</div>
 
+<div class="info-grid">
+  <div class="info-card"><div class="info-title">Forma de pagamento</div><div class="info-value">${formaPagamentoTexto}</div></div>
+  <div class="info-card"><div class="info-title">Data da conclusão</div><div class="info-value">${dataConclusaoTexto}</div></div>
+</div>
+
+${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao+"</div>":""}
+
+<div class="thanks">Agradecemos a preferência!</div>
+<div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
+<div class="foot">
+  <div><b>Fale conosco</b><br>(11) 9.3922-8558</div>
+  <div><b>Qualidade e confiança</b><br>Compromisso com o seu veículo</div>
+</div>
 
 </body></html>`;
 
