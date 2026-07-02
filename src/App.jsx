@@ -534,10 +534,26 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
 
 </body></html>`;
 
-  const imprimir = () => {
-    const w = window.open("","_blank","width=800,height=600");
-    w.document.write(html); w.document.close(); w.focus();
-    setTimeout(()=>w.print(),400);
+  const imprimir = async () => {
+    toast("Preparando impressão...");
+    try {
+      // Imprime a mesma captura usada na imagem/PDF, mantendo largura e altura da Prévia.
+      const canvas = await gerarCanvas();
+      const img = canvas.toDataURL("image/png");
+      const w = window.open("","_blank","width=800,height=600");
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imprimir OS</title>
+        <style>
+          *{box-sizing:border-box} body{margin:0;background:#fff}
+          img{display:block;width:100%;height:auto}
+          @page{margin:0;size:auto}
+          @media print{body{margin:0} img{width:100%;height:auto;page-break-inside:avoid}}
+        </style></head><body><img src="${img}" /></body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(()=>w.print(),500);
+    } catch(e) {
+      if (e.name!=="AbortError") alert("Erro ao preparar impressão: "+e.message);
+    }
   };
 
   const loadScript = (src) => new Promise((res,rej)=>{
@@ -549,21 +565,24 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
   });
 
-  // Gera o arquivo usando exatamente a mesma área visível da Prévia.
-  // Antes a largura já estava correta, mas a altura era cortada no tamanho do conteúdo.
-  // No celular isso mudava a proporção da imagem enviada. Agora usamos a largura E a
-  // altura reais do iframe da Prévia, mantendo a mesma proporção vista na tela.
-  const obterDimensoesPreview = () => {
+  // Gera o arquivo usando exatamente o mesmo tamanho visível da Prévia.
+  // Antes a imagem/PDF copiava só a largura e usava a altura do conteúdo; no celular
+  // isso deixava o arquivo enviado mais baixo que a tela da Prévia. Agora copiamos
+  // largura E altura do iframe visível, mantendo a mesma proporção da Prévia.
+  const obterTamanhoPreview = () => {
     const frame = previewFrameRef.current;
     if (frame) {
       const rect = frame.getBoundingClientRect();
-      const width = Math.round(rect.width || window.innerWidth || 420);
-      const height = Math.round(rect.height || window.innerHeight || 700);
-      return { width, height };
+      if (rect.width && rect.height) {
+        return {
+          largura: Math.round(rect.width),
+          altura: Math.round(rect.height)
+        };
+      }
     }
     return {
-      width: Math.round(window.innerWidth || 420),
-      height: Math.round(window.innerHeight || 700)
+      largura: Math.round(window.innerWidth || 420),
+      altura: Math.round(window.innerHeight || 720)
     };
   };
 
@@ -575,11 +594,12 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     })));
   };
 
-  const gerarCanvas = async () => {
+  const gerarCanvas = async (largura, altura) => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
-    const dimensoesPreview = obterDimensoesPreview();
-    const larguraFinal = Math.round(dimensoesPreview.width);
-    const alturaPreview = Math.round(dimensoesPreview.height);
+    const tamanhoPreview = obterTamanhoPreview();
+    const larguraFinal = Math.round(largura || tamanhoPreview.largura);
+    const alturaPreview = Math.round(altura || tamanhoPreview.altura);
+
     const iframe = document.createElement("iframe");
     iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:"+alturaPreview+"px;border:none;background:#fff;";
     document.body.appendChild(iframe);
@@ -598,11 +618,12 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
     await aguardarImagens(doc);
     await new Promise(r=>setTimeout(r,300));
 
-    // Mantém pelo menos a mesma altura visível da Prévia.
-    // Se a OS tiver muito conteúdo, aumenta para não cortar nada.
+    // Usa a altura da Prévia como mínimo para manter a proporção da tela.
+    // Se a OS tiver muitos itens e o conteúdo for maior, aumenta para não cortar.
     const alturaConteudo = Math.ceil(Math.max(
-      doc.body.scrollHeight || 0,
-      doc.documentElement.scrollHeight || 0
+      doc.body.scrollHeight,
+      doc.documentElement.scrollHeight,
+      alturaPreview
     ));
     const alturaFinal = Math.max(alturaPreview, alturaConteudo);
     iframe.style.height = alturaFinal+"px";
@@ -614,6 +635,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
       useCORS:true,
       allowTaint:true,
       windowWidth:larguraFinal,
+      windowHeight:alturaFinal,
       width:larguraFinal,
       height:alturaFinal,
       backgroundColor:"#ffffff"
@@ -659,7 +681,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observacoes:</b><br>"+os.observacao+"
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const canvas = await gerarCanvas(); // mesma largura e altura reais da Prévia
+      const canvas = await gerarCanvas(); // mesma largura real da Prévia
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
