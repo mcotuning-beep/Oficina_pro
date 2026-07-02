@@ -492,6 +492,14 @@ function ModalImpressao({ os, onClose }) {
 body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:11px;line-height:1.4}
 body.share-mode{padding:10px}
 body.preview-mode{padding:6px;overflow:hidden}
+body.preview-screen-mode{padding:8px;overflow:auto;width:100%;background:#fff}
+body.preview-screen-mode .doc-page{width:100%;max-width:520px;min-height:auto;margin:0 auto;padding:8px}
+body.preview-screen-mode .doc-inner{padding:8px}
+body.preview-screen-mode table, body.share-mode table{table-layout:fixed}
+body.preview-screen-mode th:nth-child(1), body.preview-screen-mode td:nth-child(1), body.share-mode th:nth-child(1), body.share-mode td:nth-child(1){width:auto;word-break:break-word;overflow-wrap:anywhere}
+body.preview-screen-mode th:nth-child(2), body.preview-screen-mode td:nth-child(2), body.share-mode th:nth-child(2), body.share-mode td:nth-child(2){width:42px}
+body.preview-screen-mode th:nth-child(3), body.preview-screen-mode td:nth-child(3), body.share-mode th:nth-child(3), body.share-mode td:nth-child(3){width:86px}
+body.preview-screen-mode .cli-row{flex-wrap:wrap;gap:8px}
 body.a4-mode{padding:0;overflow:visible}
 body.a4-mode .doc-page{width:794px;min-height:1123px;border:1.5px solid #d1d5db;border-radius:10px;padding:18px;background:#fff;display:flex}
 body.a4-mode .doc-inner{width:100%;min-height:1087px;display:flex;flex-direction:column}
@@ -618,8 +626,8 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
 })();
 <\/script>`;
 
-  const htmlPreview = html.replace('<body>', '<body class="preview-mode">').replace('</body></html>', fitPreviewScript + '</body></html>');
   const htmlShare = html.replace('<body>', '<body class="share-mode">');
+  const htmlPreview = html.replace('<body>', '<body class="share-mode preview-screen-mode">');
   const htmlA4 = html.replace('<body>', '<body class="a4-mode">');
 
   const imprimir = () => {
@@ -778,24 +786,15 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:300,
       display:"flex",flexDirection:"column"}}>
-      {/* Header */}
-      <div style={{background:T.surface,borderBottom:"1px solid "+T.border,
-        padding:"10px 14px",display:"flex",justifyContent:"space-between",
-        alignItems:"center",flexShrink:0}}>
-        <span style={{fontWeight:800,fontSize:13,color:T.text}}>
-          Prévia — {os.tipo||"OS"} #{String(os.numero||0).padStart(4,"0")}
-        </span>
-        <button onClick={onClose} style={{background:"none",border:"none",
-          color:T.muted,fontSize:22,cursor:"pointer"}}>✕</button>
-      </div>
-      {/* iframe fullscreen */}
-      <div style={{flex:1,overflow:"hidden"}}>
+      <button onClick={onClose} aria-label="Fechar prévia" style={{position:"absolute",top:10,right:10,zIndex:2,
+        width:38,height:38,borderRadius:19,border:"1px solid rgba(255,255,255,.25)",
+        background:"rgba(15,23,42,.82)",color:"#fff",fontSize:22,lineHeight:"34px",cursor:"pointer"}}>×</button>
+      <div style={{flex:1,overflow:"hidden",background:"#fff"}}>
         <iframe ref={previewFrameRef} srcDoc={htmlPreview} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia OS" />
       </div>
       <div style={{background:T.surface,borderTop:"1px solid "+T.border,
         padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
         flexWrap:"wrap",flexShrink:0}}>
-        <Btn v="ghost" onClick={onClose}>Fechar</Btn>
         <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
         <Btn v="green" onClick={exportarPDF}>📄 Salvar PDF</Btn>
         <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
