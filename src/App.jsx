@@ -490,6 +490,12 @@ function ModalImpressao({ os, onClose }) {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:11px;line-height:1.4}
+body.share-mode{padding:10px}
+body.preview-mode{padding:6px;overflow:hidden}
+body.a4-mode{padding:0;overflow:visible}
+body.a4-mode .doc-page{width:794px;min-height:1123px;border:1.5px solid #d1d5db;border-radius:10px;padding:18px;background:#fff;display:flex}
+body.a4-mode .doc-inner{width:100%;min-height:1087px;display:flex;flex-direction:column}
+body.a4-mode .thanks{margin-top:auto}
 .doc-page{width:100%;min-height:calc(100vh - 24px);border:1.5px solid #d1d5db;border-radius:10px;padding:10px;background:#fff}
 .doc-inner{border:1.5px solid #16a34a33;border-radius:8px;padding:10px;background:#fff}
 .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:8px}
@@ -522,8 +528,8 @@ tr:nth-child(even) td{background:#fafafa}
 .brand-foot{text-align:center;font-size:8.5px;font-weight:700;color:#444;margin-bottom:4px}.brand-foot span{color:#d97706}
 .foot{border-top:1px dashed #ddd;padding-top:7px;margin-top:8px;display:flex;justify-content:space-between;gap:8px;font-size:8px;color:#555}
 @media(max-width:420px){.info-grid{grid-template-columns:1fr}.foot{display:block}.foot div{margin-bottom:4px}}
-@page{size:A4;margin:1cm}
-@media print{body{padding:0}.doc-page{min-height:auto;border:1px solid #d1d5db;border-radius:6px}.doc-inner{border:1px solid #16a34a33;border-radius:5px}}
+@page{size:A4;margin:0}
+@media print{body{padding:0!important;margin:0!important;width:210mm;height:297mm;overflow:hidden}.doc-page{width:210mm!important;height:297mm!important;min-height:297mm!important;border:1px solid #d1d5db;border-radius:6px;padding:6mm!important;display:flex}.doc-inner{width:100%;min-height:100%;border:1px solid #16a34a33;border-radius:5px;display:flex;flex-direction:column}.thanks{margin-top:auto}}
 </style></head><body>
 <div class="doc-page"><div class="doc-inner">
 <div class="hdr">
@@ -592,9 +598,33 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
 </div></div>
 </body></html>`;
 
+  const fitPreviewScript = `<script>
+(function(){
+  function fit(){
+    if(!document.body.classList.contains('preview-mode')) return;
+    document.body.style.zoom = '1';
+    document.body.style.width = '100%';
+    var page = document.querySelector('.doc-page');
+    if(!page) return;
+    var rect = page.getBoundingClientRect();
+    var sx = (window.innerWidth - 8) / rect.width;
+    var sy = (window.innerHeight - 8) / rect.height;
+    var scale = Math.min(sx, sy, 1);
+    document.body.style.zoom = scale;
+    document.body.style.width = (100 / scale) + '%';
+  }
+  window.addEventListener('load', function(){ setTimeout(fit, 80); setTimeout(fit, 350); });
+  window.addEventListener('resize', fit);
+})();
+<\/script>`;
+
+  const htmlPreview = html.replace('<body>', '<body class="preview-mode">').replace('</body></html>', fitPreviewScript + '</body></html>');
+  const htmlShare = html.replace('<body>', '<body class="share-mode">');
+  const htmlA4 = html.replace('<body>', '<body class="a4-mode">');
+
   const imprimir = () => {
     const w = window.open("","_blank","width=800,height=600");
-    w.document.write(html); w.document.close(); w.focus();
+    w.document.write(htmlA4); w.document.close(); w.focus();
     setTimeout(()=>w.print(),400);
   };
 
@@ -631,7 +661,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
     })));
   };
 
-  const capturarDocumento = async (largura = A4_W) => {
+  const capturarDocumento = async (largura = A4_W, modo = "a4") => {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
     const larguraFinal = Math.round(largura);
     const iframe = document.createElement("iframe");
@@ -640,7 +670,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
 
     const doc = iframe.contentDocument;
     doc.open();
-    doc.write(html);
+    doc.write(modo === "share" ? htmlShare : htmlA4);
     doc.close();
 
     doc.documentElement.style.width = larguraFinal+"px";
@@ -686,7 +716,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
     return saida;
   };
 
-  const gerarCanvas = async () => gerarCanvasA4();
+  const gerarCanvasCompartilhar = async () => capturarDocumento(Math.min(Math.max(obterLarguraPreview(), 390), 520), "share");
 
   const exportarPDF = async () => {
     toast("Gerando PDF...");
@@ -718,7 +748,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
-      const canvas = await gerarCanvasA4(); // proporção A4 para imprimir sem estourar
+      const canvas = await gerarCanvasCompartilhar(); // imagem otimizada para abrir no celular/WhatsApp
       const nome = "OS_"+String(os.numero).padStart(4,"0")+"_"+(os.placa||"")+".png";
 
       // Converte canvas para blob
@@ -741,7 +771,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
       link.click();
       toast("Imagem salva nos downloads.");
     } catch(e) {
-      if (e.name!=="AbortError") alert("Erro ao gerar imagem: "+e.message);
+      if (e.name!=="AbortError") alert("Erro ao compartilhar imagem: "+e.message);
     }
   };
 
@@ -760,7 +790,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
       </div>
       {/* iframe fullscreen */}
       <div style={{flex:1,overflow:"hidden"}}>
-        <iframe ref={previewFrameRef} srcDoc={html} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia OS" />
+        <iframe ref={previewFrameRef} srcDoc={htmlPreview} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia OS" />
       </div>
       <div style={{background:T.surface,borderTop:"1px solid "+T.border,
         padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
@@ -768,7 +798,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
         <Btn v="ghost" onClick={onClose}>Fechar</Btn>
         <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
         <Btn v="green" onClick={exportarPDF}>📄 Salvar PDF</Btn>
-        <Btn v="orange" onClick={exportarImagem}>🖼️ Salvar Imagem</Btn>
+        <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
       </div>
       <div style={{marginTop:8,fontSize:11,color:T.muted,textAlign:"center"}}>
         ⚠️ Compartilhamento direto funciona após hospedar o app. Por enquanto salva nos downloads.
