@@ -2359,7 +2359,6 @@ function AbaAnalise(){
     const saldoMeta = lucroReal - metaAcumulada;
     const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroReal/metaAcumulada)*100) : 0;
     const faltaMeta = Math.max(0, metaAcumulada - lucroReal);
-    const feriadosTxt = (getConfig().feriadosOficina || []).join(", ");
 
     const mapa = {};
     comValor.forEach(o => {
@@ -2450,7 +2449,7 @@ function AbaAnalise(){
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:8}}>
-            <div><div style={{fontSize:9,color:T.muted}}>Dias da meta</div><b style={{color:T.text}}>{metaNum>0?diasMeta:"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Dias úteis contabilizados</div><b style={{color:T.text}}>{metaNum>0?diasMeta:"—"}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>Meta acumulada</div><b style={{color:T.blue}}>{metaNum>0?fmtR(metaAcumulada):"—"}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaAcumulada>0&&lucroReal>=metaAcumulada?T.green:T.accent}}>{metaAcumulada>0?percMeta.toFixed(0)+"%":"—"}</b></div>
           </div>
@@ -2458,12 +2457,6 @@ function AbaAnalise(){
             <div><div style={{fontSize:9,color:T.muted}}>Lucro hoje</div><b style={{color:lucroHoje>=0?T.green:T.red}}>{fmtR(lucroHoje)}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>Lucro acumulado</div><b style={{color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>{saldoMeta>=0?"Acima":"Falta"}</div><b style={{color:saldoMeta>=0?T.green:T.accent}}>{metaNum>0?fmtR(Math.abs(saldoMeta)):"—"}</b></div>
-          </div>
-          <div style={{marginTop:10,borderTop:"1px solid "+T.border,paddingTop:10}}>
-            <div style={{fontSize:10,color:T.muted,marginBottom:5}}>Feriados / dias fechados do mês <span style={{opacity:.75}}>(use AAAA-MM-DD ou MM-DD, separados por vírgula)</span></div>
-            <input defaultValue={feriadosTxt} placeholder="Ex.: 2026-07-09, 09-07"
-              onBlur={e=>{const arr=e.target.value.split(/[\n,; ]+/).map(x=>x.trim()).filter(Boolean); setConfig({feriadosOficina:arr});}}
-              style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"8px",fontSize:12,boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
           </div>
         </div>
         {rank.length === 0 ? (
@@ -2549,6 +2542,28 @@ function TelaLogin({ onLogin }) {
 }
 
 export default function App() {
+
+  useEffect(()=>{
+    document.title = "OficinaPro - M.Scarpel";
+    const upsertLink = (selector, attrs) => {
+      let el = document.head.querySelector(selector);
+      if (!el) {
+        el = document.createElement("link");
+        document.head.appendChild(el);
+      }
+      Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
+    };
+    upsertLink('link[rel="icon"]', { rel:"icon", type:"image/png", href:"/icon-192.png" });
+    upsertLink('link[rel="apple-touch-icon"]', { rel:"apple-touch-icon", href:"/icon-180.png" });
+    upsertLink('link[rel="manifest"]', { rel:"manifest", href:"/manifest.json" });
+    let metaTheme = document.head.querySelector('meta[name="theme-color"]');
+    if (!metaTheme) {
+      metaTheme = document.createElement("meta");
+      metaTheme.setAttribute("name", "theme-color");
+      document.head.appendChild(metaTheme);
+    }
+    metaTheme.setAttribute("content", "#111318");
+  },[]);
   const [usuario, setUsuario] = useState(null);
   const [aba, setAba] = useState("ordens");
 
