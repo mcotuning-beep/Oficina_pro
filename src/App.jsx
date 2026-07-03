@@ -2239,7 +2239,7 @@ function AbaRelatorios() {
   const calcPer = (lista,ini,fim) => {
     const f = lista.filter(o=>{ const dr = dataRelatorio(o); return dr>=ini&&dr<=fim; });
     const bruto = f.reduce((s,o)=>s+calcTotal(o),0);
-    const liquido = f.reduce((s,o)=>s+(o.totalLiquido||calcTotal(o)),0);
+    const liquido = f.reduce((s,o)=>s+calcResultadoOS(o).lucro,0);
     const taxas = f.reduce((s,o)=>s+(o.totalTaxas||0),0);
     return {qtd:f.length,bruto,liquido,taxas,ordens:f};
   };
