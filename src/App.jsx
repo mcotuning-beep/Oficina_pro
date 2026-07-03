@@ -906,6 +906,72 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
     }
   };
 
+
+  const htmlFiscal = (() => {
+    const f = {...getClienteFiscal(os.cliente), ...(os.fiscal||{})};
+    const linhasItens = (os.itens||[]).map(i=>`<tr><td>${i.descricao||""}</td><td style="text-align:center">${i.qty||1}</td><td style="text-align:right">R$ ${(parseFloat(i.venda||0)*(parseInt(i.qty||1)||1)).toFixed(2).replace(".",",")}</td></tr>`).join("");
+    const endereco = [f.endereco, f.numero, f.complemento, f.bairro, f.cidade, f.estado, f.cep].filter(Boolean).join(" - ");
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF Fiscal OS #${os.numero||""}</title>
+<style>
+*{box-sizing:border-box} body{font-family:Arial,sans-serif;color:#111;background:#fff;margin:0;padding:28px;font-size:13px;line-height:1.45}.page{border:1px solid #ddd;border-radius:12px;padding:22px;min-height:1040px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #111;padding-bottom:12px;margin-bottom:18px}.brand{font-size:22px;font-weight:900}.brand span{color:#d97706}.sub{font-size:12px;color:#555;margin-top:4px}.box{border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin:12px 0}.title{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.8px;color:#d97706;margin-bottom:8px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}.lb{font-size:10px;text-transform:uppercase;color:#777;font-weight:700}.vl{font-weight:700;margin-top:2px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#111;color:#fff;text-align:left;padding:8px;font-size:12px}td{border-bottom:1px solid #eee;padding:8px}.total{display:flex;justify-content:space-between;font-size:20px;font-weight:900;border-top:2px solid #111;margin-top:12px;padding-top:10px}.note{background:#fffbeb;border-left:4px solid #d97706;padding:10px;margin-top:14px;font-size:12px}.foot{margin-top:18px;border-top:1px dashed #ddd;padding-top:10px;color:#666;font-size:11px}@page{size:A4;margin:10mm}@media print{body{padding:0}.page{border:none;min-height:auto}}
+</style></head><body><div class="page">
+<div class="hdr"><div><div class="brand">M.<span>SCARPEL</span></div><div class="sub">Serviços Automotivos</div></div><div style="text-align:right"><b>PDF Fiscal / Contadora</b><br>OS #${String(os.numero||"").padStart(4,"0")}<br>${fmtDate(os.dataConclusao||os.data)}</div></div>
+<div class="box"><div class="title">Dados do cliente</div><div class="grid">
+<div><div class="lb">Tipo</div><div class="vl">${f.tipoPessoa==="PF"?"Pessoa Física":"Pessoa Jurídica"}</div></div>
+<div><div class="lb">Cliente / Razão social</div><div class="vl">${f.razaoSocial||os.cliente||"-"}</div></div>
+${f.tipoPessoa!=="PF"?`<div><div class="lb">Nome fantasia</div><div class="vl">${f.nomeFantasia||"-"}</div></div>`:""}
+<div><div class="lb">${f.tipoPessoa==="PF"?"CPF":"CNPJ"}</div><div class="vl">${f.cpfCnpj||"-"}</div></div>
+<div><div class="lb">${f.tipoPessoa==="PF"?"RG":"Inscrição estadual"}</div><div class="vl">${f.rgIe||"-"}</div></div>
+<div><div class="lb">Telefone</div><div class="vl">${os.telefone||"-"}</div></div>
+<div><div class="lb">E-mail</div><div class="vl">${f.email||"-"}</div></div>
+<div style="grid-column:1/-1"><div class="lb">Endereço</div><div class="vl">${endereco||"-"}</div></div>
+</div></div>
+<div class="box"><div class="title">Dados do veículo</div><div class="grid"><div><div class="lb">Placa</div><div class="vl">${os.placa||"-"}</div></div><div><div class="lb">Veículo</div><div class="vl">${os.veiculo||"-"}</div></div><div><div class="lb">Ano</div><div class="vl">${os.ano||"-"}</div></div><div><div class="lb">KM</div><div class="vl">${os.km||"-"}</div></div></div></div>
+<div class="box"><div class="title">Serviços / Produtos para emissão da nota</div>${os.servicos?`<div style="white-space:pre-wrap;margin-bottom:8px">${os.servicos}</div>`:""}<table><thead><tr><th>Descrição</th><th style="width:60px;text-align:center">Qtd</th><th style="width:120px;text-align:right">Valor</th></tr></thead><tbody>${linhasItens||""}<tr><td>Mão de obra / Serviços</td><td style="text-align:center">1</td><td style="text-align:right">R$ ${parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")}</td></tr></tbody></table><div class="total"><span>Total da OS</span><span>${fmtBRL(total)}</span></div></div>
+<div class="note"><b>Observação para contabilidade:</b> documento gerado a partir da Ordem de Serviço para auxiliar a emissão da Nota Fiscal. Conferir dados fiscais antes da emissão.</div>
+<div class="foot">M.SCARPEL Serviços Automotivos · Documento interno para envio à contadora</div>
+</div></body></html>`;
+  })();
+
+  const exportarPDFFiscal = async () => {
+    const f = {...getClienteFiscal(os.cliente), ...(os.fiscal||{})};
+    if(!f.cpfCnpj){
+      const seguir = confirm("Cliente sem CPF/CNPJ cadastrado. Deseja gerar o PDF Fiscal mesmo assim?");
+      if(!seguir) return;
+    }
+    toast("Gerando PDF Fiscal...");
+    try {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:1123px;border:none;background:#fff;";
+      document.body.appendChild(iframe);
+      const doc = iframe.contentDocument;
+      doc.open(); doc.write(htmlFiscal); doc.close();
+      await aguardarImagens(doc);
+      await new Promise(r=>setTimeout(r,250));
+      const canvas = await window.html2canvas(doc.body,{scale:2,useCORS:true,allowTaint:true,windowWidth:794,width:794,height:Math.max(1123,doc.body.scrollHeight),backgroundColor:"#ffffff"});
+      document.body.removeChild(iframe);
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({orientation:"p",unit:"mm",format:"a4",compress:true});
+      const imgH = Math.min(297, (canvas.height*210)/canvas.width);
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",0,0,210,imgH);
+      const nome = "PDF_Fiscal_OS_"+String(os.numero||"").padStart(4,"0")+"_"+(os.placa||"")+".pdf";
+      if(navigator.share && navigator.canShare){
+        const blob = pdf.output("blob");
+        const file = new File([blob], nome, {type:"application/pdf"});
+        if(navigator.canShare({files:[file]})){
+          await navigator.share({files:[file],title:"PDF Fiscal OS #"+String(os.numero||"").padStart(4,"0"),text:"Dados para emissão de nota fiscal — "+(os.cliente||"")});
+          return;
+        }
+      }
+      pdf.save(nome);
+      toast("PDF Fiscal salvo nos downloads.");
+    } catch(e){
+      if(e.name!=="AbortError") alert("Erro ao gerar PDF Fiscal: "+e.message);
+    }
+  };
+
   const exportarImagem = async () => {
     toast("Gerando imagem...");
     try {
@@ -951,6 +1017,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
         <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
         <Btn v="green" onClick={exportarPDF}>📄 Salvar PDF</Btn>
         <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
+        <Btn v="blue" onClick={exportarPDFFiscal}>🧾 PDF Fiscal</Btn>
       </div>
       <div style={{marginTop:8,fontSize:11,color:T.muted,textAlign:"center"}}>
         ⚠️ Compartilhamento direto funciona após hospedar o app. Por enquanto salva nos downloads.
@@ -1187,6 +1254,74 @@ function ConfirmarExclusao({ osId, onConfirm }) {
 
 // ── TELA OS ───────────────────────────────────────────────────────────────────
 
+
+function getClienteFiscal(nome){
+  if(!nome) return {};
+  const c = db.get(K.clientes).find(x => (x.nome||"").toLowerCase() === String(nome||"").toLowerCase());
+  return c?.fiscal || {};
+}
+
+function ModalDadosFiscais({ os, onSave, onClose }) {
+  const fiscalBase = {...getClienteFiscal(os.cliente), ...(os.fiscal||{})};
+  const [f, setF] = useState({
+    tipoPessoa: fiscalBase.tipoPessoa || "PJ",
+    razaoSocial: fiscalBase.razaoSocial || os.cliente || "",
+    nomeFantasia: fiscalBase.nomeFantasia || "",
+    cpfCnpj: fiscalBase.cpfCnpj || "",
+    rgIe: fiscalBase.rgIe || "",
+    email: fiscalBase.email || "",
+    cep: fiscalBase.cep || "",
+    endereco: fiscalBase.endereco || "",
+    numero: fiscalBase.numero || "",
+    complemento: fiscalBase.complemento || "",
+    bairro: fiscalBase.bairro || "",
+    cidade: fiscalBase.cidade || "",
+    estado: fiscalBase.estado || "",
+  });
+  const set = (k,v) => setF(o=>({...o,[k]:v}));
+  const salvarFiscal = () => {
+    const clis = db.get(K.clientes);
+    const idx = clis.findIndex(c => (c.nome||"").toLowerCase() === String(os.cliente||"").toLowerCase());
+    if(idx >= 0){
+      const novo = [...clis];
+      novo[idx] = {...novo[idx], tel: os.telefone || novo[idx].tel || "", fiscal: f};
+      db.set(K.clientes, novo);
+    } else if(os.cliente){
+      db.set(K.clientes, [...clis, {id:uid(), nome:os.cliente, tel:os.telefone||"", criado:today(), fiscal:f}]);
+    }
+    onSave(f);
+    toast("Dados fiscais salvos!");
+  };
+  const isPJ = f.tipoPessoa === "PJ";
+  return <Modal title="📋 Dados completos / Fiscal" onClose={onClose} w={760}>
+    <div style={{display:"grid",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <Btn v={f.tipoPessoa==="PF"?"blue":"ghost"} onClick={()=>set("tipoPessoa","PF")} full>👤 Pessoa Física</Btn>
+        <Btn v={f.tipoPessoa==="PJ"?"blue":"ghost"} onClick={()=>set("tipoPessoa","PJ")} full>🏢 Pessoa Jurídica</Btn>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <Inp label={isPJ?"Razão social":"Nome completo"} value={f.razaoSocial} onChange={v=>set("razaoSocial",v)} placeholder={isPJ?"Razão social da empresa":"Nome completo"} />
+        {isPJ && <Inp label="Nome fantasia" value={f.nomeFantasia} onChange={v=>set("nomeFantasia",v)} placeholder="Nome fantasia" />}
+        <Inp label={isPJ?"CNPJ":"CPF"} value={f.cpfCnpj} onChange={v=>set("cpfCnpj",v)} placeholder={isPJ?"00.000.000/0000-00":"000.000.000-00"} />
+        <Inp label={isPJ?"Inscrição estadual":"RG"} value={f.rgIe} onChange={v=>set("rgIe",v)} placeholder={isPJ?"IE / Isento":"RG"} />
+        <Inp label="E-mail" value={f.email} onChange={v=>set("email",v)} placeholder="email@empresa.com.br" />
+        <Inp label="CEP" value={f.cep} onChange={v=>set("cep",v)} placeholder="00000-000" />
+        <Inp label="Endereço" value={f.endereco} onChange={v=>set("endereco",v)} placeholder="Rua / Avenida" />
+        <Inp label="Número" value={f.numero} onChange={v=>set("numero",v)} placeholder="123" />
+        <Inp label="Complemento" value={f.complemento} onChange={v=>set("complemento",v)} placeholder="Sala, bloco..." />
+        <Inp label="Bairro" value={f.bairro} onChange={v=>set("bairro",v)} placeholder="Bairro" />
+        <Inp label="Cidade" value={f.cidade} onChange={v=>set("cidade",v)} placeholder="Cidade" />
+        <Inp label="Estado" value={f.estado} onChange={v=>set("estado",v.toUpperCase().slice(0,2))} placeholder="SP" />
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+        <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
+        <Btn v="green" onClick={salvarFiscal} full>💾 Salvar dados fiscais</Btn>
+      </div>
+      <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>Esses dados são usados somente para o PDF Fiscal/Contadora.</div>
+    </div>
+  </Modal>;
+}
+
 function TelaOS({ os:ini, onSave, onClose }) {
   const mk = () => ({id:uid(),numero:null,placa:"",veiculo:"",ano:"",cliente:"",
     telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",outrosCustos:"",
@@ -1198,6 +1333,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [modalProd, setModalProd] = useState(null);
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
+  const [fiscalOpen, setFiscalOpen] = useState(false);
   const [aiLoad, setAiLoad] = useState(false);
   const [aiResp, setAiResp] = useState("");
 
@@ -1229,7 +1365,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
     if (vei) {
       const cli = db.get(K.clientes).find(c=>c.id===vei.clienteId);
       setOs(o=>({...o,placa:p,veiculo:(vei.modelo||"").trim(),ano:vei.ano||o.ano,
-        cliente:cli?.nome||o.cliente,telefone:cli?.tel||o.telefone}));
+        cliente:cli?.nome||o.cliente,telefone:cli?.tel||o.telefone,fiscal:cli?.fiscal||o.fiscal}));
     } else {
       upd("placa",p);
     }
@@ -1266,8 +1402,14 @@ function TelaOS({ os:ini, onSave, onClose }) {
     if (!f.placa) return null;
     if (f.cliente) {
       const clis = db.get(K.clientes);
-      if (!clis.find(c=>c.nome?.toLowerCase()===f.cliente.toLowerCase()))
-        db.set(K.clientes,[...clis,{id:uid(),nome:f.cliente,tel:f.telefone,criado:today()}]);
+      const idxCli = clis.findIndex(c=>c.nome?.toLowerCase()===f.cliente.toLowerCase());
+      if (idxCli < 0) {
+        db.set(K.clientes,[...clis,{id:uid(),nome:f.cliente,tel:f.telefone,criado:today(),fiscal:f.fiscal||{}}]);
+      } else if (f.fiscal) {
+        const novoClis = [...clis];
+        novoClis[idxCli] = {...novoClis[idxCli], tel:f.telefone||novoClis[idxCli].tel||"", fiscal:f.fiscal};
+        db.set(K.clientes, novoClis);
+      }
     }
     const veis = db.get(K.veiculos);
     if (!veis.find(v=>v.placa===f.placa)) {
@@ -1385,6 +1527,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
             </button>
           </div>
         </div>
+        <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
           <Inp label="KM atual" value={os.km} onChange={v=>upd("km",v)} placeholder="85000" />
           <Sel label="Tipo" value={os.tipo||"OS"} onChange={v=>{
@@ -1597,6 +1740,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
 
       {modalProd && <ModalNovoProduto nome={modalProd} onClose={()=>setModalProd(null)} onSave={p=>{setModalProd(null);addProduto(p);}} />}
       {previaOpen && <ModalImpressao os={os} onClose={()=>setPreviaOpen(false)} />}
+      {fiscalOpen && <ModalDadosFiscais os={os} onClose={()=>setFiscalOpen(false)} onSave={f=>{setOs(o=>({...o,fiscal:f}));setFiscalOpen(false);}} />}
       {pagtoOpen && <ModalPagamento os={os} onClose={()=>setPagtoOpen(false)}
         onSave={novaOS=>{setOs(novaOS);setPagtoOpen(false);onSave&&onSave(novaOS);}} />}
     </div>
