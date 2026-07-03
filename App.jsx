@@ -2700,7 +2700,7 @@ function TelaLogin({ onLogin }) {
 }
 
 export default function App() {
-  const [usuario, setUsuario] = useState(null);
+  const usuario = {user:"admin",senha:"",nivel:"admin",nome:"Administrador"};
   const [aba, setAba] = useState("ordens");
 
   useEffect(()=>{
@@ -2709,12 +2709,7 @@ export default function App() {
     return () => window.removeEventListener("switchTab", handler);
   },[]);
 
-  if (!usuario) {
-    setUsuario({user:"admin",senha:"",nivel:"admin",nome:"Administrador"});
-    return null;
-  }
-
-  const isAdmin = usuario.nivel==="admin";
+  const isAdmin = true;
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"agenda",icon:"📅",label:"Agenda"},
