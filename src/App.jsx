@@ -2239,10 +2239,9 @@ function AbaRelatorios() {
   const calcPer = (lista,ini,fim) => {
     const f = lista.filter(o=>{ const dr = dataRelatorio(o); return dr>=ini&&dr<=fim; });
     const bruto = f.reduce((s,o)=>s+calcTotal(o),0);
-    const liquido = f.reduce((s,o)=>s+calcResultadoOS(o).lucro,0);
+    const liquido = f.reduce((s,o)=>s+(o.totalLiquido||calcTotal(o)),0);
     const taxas = f.reduce((s,o)=>s+(o.totalTaxas||0),0);
-    const custoPecas = f.reduce((s,o)=>s+calcResultadoOS(o).custoPecas,0);
-    return {qtd:f.length,bruto,liquido,taxas,custoPecas,ordens:f};
+    return {qtd:f.length,bruto,liquido,taxas,ordens:f};
   };
 
   const t = today();
@@ -2282,7 +2281,6 @@ function AbaRelatorios() {
       <div style={{fontSize:24,fontWeight:900,color:T.text,marginBottom:4}}>{fmtBRL(per.bruto)}</div>
       <div style={{fontSize:12,color:T.green,marginBottom:2}}>Líquido: {fmtBRL(per.liquido)}</div>
       {per.taxas>0 && <div style={{fontSize:11,color:T.red}}>Taxa maquininha: -{fmtBRL(per.taxas)}</div>}
-      {per.custoPecas>0 && <div style={{fontSize:11,color:T.red}}>Custo peças: -{fmtBRL(per.custoPecas)}</div>}
       <div style={{fontSize:11,color:T.muted,marginTop:4}}>{per.qtd} OS concluída{per.qtd!==1?"s":""}</div>
     </Card>
   );
@@ -2332,7 +2330,6 @@ function AbaRelatorios() {
           <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>OS concluídas no mês</div>
           {mes.ordens.sort((a,b)=>dataRelatorio(b).localeCompare(dataRelatorio(a))).map(os => {
             const t = calcTotal(os);
-            const res = calcResultadoOS(os);
             return (
               <Card key={os.id} style={{marginBottom:6,padding:"10px 14px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
@@ -2343,15 +2340,9 @@ function AbaRelatorios() {
                   </div>
                   <div style={{textAlign:"right"}}>
                     <span style={{fontWeight:800,color:T.green}}>{fmtBRL(t)}</span>
-                    {res.lucro!==t && <span style={{fontSize:11,color:T.muted,marginLeft:8}}>líq. {fmtBRL(res.lucro)}</span>}
+                    {os.totalTaxas>0 && <span style={{fontSize:11,color:T.muted,marginLeft:8}}>líq. {fmtBRL(os.totalLiquido)}</span>}
                   </div>
                 </div>
-                {(res.taxas>0 || res.custoPecas>0) && (
-                  <div style={{display:"flex",gap:12,marginTop:4,fontSize:10,color:T.red}}>
-                    {res.taxas>0 && <span>Taxa maquininha: -{fmtBRL(res.taxas)}</span>}
-                    {res.custoPecas>0 && <span>Custo peças: -{fmtBRL(res.custoPecas)}</span>}
-                  </div>
-                )}
               </Card>
             );
           })}
