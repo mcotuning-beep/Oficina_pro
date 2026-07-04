@@ -1018,129 +1018,6 @@ ${f.tipoPessoa!=="PF"?`<div><div class="lb">Nome fantasia</div><div class="vl">$
 
 
 // ── BOTÃO DE VOZ ─────────────────────────────────────────────────────────────
-function BotaoVoz({ onPreenchido }) {
-  const [estado, setEstado] = useState("idle"); // idle | ouvindo | processando
-  const [transcricao, setTranscricao] = useState("");
-  const [resultado, setResultado] = useState(null);
-  const recoRef = useRef(null);
-
-  const iniciar = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      alert("Use o Chrome ou o navegador padrão do Android para usar o microfone.");
-      return;
-    }
-    try {
-      const reco = new SR();
-      reco.lang = "pt-BR";
-      reco.continuous = false;
-      reco.interimResults = false;
-      recoRef.current = reco;
-
-      reco.onstart = () => setEstado("ouvindo");
-      reco.onend   = () => { if (estado === "ouvindo") setEstado("idle"); };
-      reco.onerror = (e) => {
-        setEstado("idle");
-        if (e.error === "not-allowed") alert("Permita o acesso ao microfone nas configurações do navegador.");
-        else alert("Erro ao capturar voz: " + e.error + ". Tente novamente.");
-      };
-      reco.onresult = async (e) => {
-        const texto = e.results[0][0].transcript;
-        setTranscricao(texto);
-        setEstado("processando");
-        try {
-          const resp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-6",
-              max_tokens: 600,
-              system: `Você é assistente de oficina mecânica. Extraia dados do texto e retorne APENAS JSON válido sem markdown:
-{"placa":"","veiculo":"","ano":"","cliente":"","telefone":"","km":"","servicos":"","observacao":""}
-Placa em maiúsculas sem traço. Campos não encontrados ficam string vazia.`,
-              messages: [{ role: "user", content: "Transcrição: " + texto }]
-            })
-          });
-          const d = await resp.json();
-          const raw = (d.content||[]).map(c=>c.text||"").join("").replace(/```json|```/g,"").trim();
-          const dados = JSON.parse(raw);
-          setResultado(dados);
-        } catch(err) {
-          alert("Erro ao interpretar com IA. Preencha manualmente.");
-        }
-        setEstado("idle");
-      };
-      reco.start();
-    } catch(err) {
-      setEstado("idle");
-      alert("Erro ao iniciar microfone: " + err.message);
-    }
-  };
-
-  const parar = () => {
-    recoRef.current && recoRef.current.stop();
-    setEstado("idle");
-  };
-
-  const aplicar = () => {
-    onPreenchido(resultado);
-    setResultado(null);
-    setTranscricao("");
-  };
-
-  return (
-    <div style={{background:T.bg,borderRadius:10,padding:14,border:"1px dashed "+T.purple}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <div style={{flex:1,fontSize:11,color:T.purple,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>
-          🎙️ Preencher por Voz
-        </div>
-        {estado==="idle" && (
-          <Btn v="ghost" onClick={iniciar} style={{color:T.purple,borderColor:T.purple}}>🎙️ Falar</Btn>
-        )}
-        {estado==="ouvindo" && (
-          <Btn v="red" onClick={parar}>⏹ Parar</Btn>
-        )}
-        {estado==="processando" && (
-          <Btn v="ghost" disabled style={{color:T.purple,borderColor:T.purple}}>⏳ Processando...</Btn>
-        )}
-      </div>
-
-      {estado==="ouvindo" && (
-        <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.purple}}>
-          <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",
-            background:T.purple,animation:"blink 1s infinite"}} />
-          Ouvindo... fale o nome do cliente, placa, veículo e o problema.
-          <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}`}</style>
-        </div>
-      )}
-
-      {transcricao && estado!=="ouvindo" && (
-        <div style={{marginTop:10,background:T.surface,borderRadius:6,padding:"8px 10px",fontSize:12,color:T.sub}}>
-          <b style={{color:T.muted}}>Você disse:</b> {transcricao}
-        </div>
-      )}
-
-      {resultado && (
-        <div style={{marginTop:10,background:"#A855F711",border:"1px solid "+T.purple+"44",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,color:T.purple,fontWeight:700,marginBottom:8}}>IA interpretou — confira:</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:12,marginBottom:10}}>
-            {[["Cliente",resultado.cliente],["Telefone",resultado.telefone],
-              ["Placa",resultado.placa],["Veículo",resultado.veiculo],
-              ["Ano",resultado.ano],["KM",resultado.km],
-              ["Serviços",resultado.servicos],["Obs",resultado.observacao]
-            ].filter(([,v])=>v).map(([k,v])=>(
-              <div key={k}><span style={{color:T.muted}}>{k}: </span><b style={{color:T.text}}>{v}</b></div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <Btn v="ghost" sz="sm" onClick={()=>{setResultado(null);setTranscricao("");}}>Cancelar</Btn>
-            <Btn sz="sm" onClick={aplicar}>✅ Aplicar na OS</Btn>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 
 // ── BOTÃO AGENDA INTELIGENTE ──────────────────────────────────────────────────
@@ -1336,19 +1213,6 @@ function TelaOS({ os:ini, onSave, onClose }) {
     return novo;
   });
 
-  const aplicarVoz = dados => {
-    setOs(o => ({...o,
-      placa: dados.placa||o.placa,
-      veiculo: dados.veiculo||o.veiculo,
-      ano: dados.ano||o.ano,
-      cliente: dados.cliente||o.cliente,
-      telefone: dados.telefone||o.telefone,
-      km: dados.km||o.km,
-      servicos: dados.servicos||o.servicos,
-      observacao: dados.observacao||o.observacao,
-    }));
-  };
-
   const onPlaca = v => {
     const p = v.toUpperCase().replace(/[^A-Z0-9]/g,"");
     const vei = db.get(K.veiculos).find(x=>x.placa===p);
@@ -1442,7 +1306,6 @@ function TelaOS({ os:ini, onSave, onClose }) {
 
   return (
     <div style={{display:"grid",gap:14}}>
-      <BotaoVoz onPreenchido={aplicarVoz} />
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
         <Inp label="Placa *" value={os.placa} onChange={onPlaca} placeholder="ABC1D23" />
         <div style={{display:"grid",gridTemplateColumns:"1fr 80px 50px",gap:8}}>
