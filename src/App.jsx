@@ -2029,181 +2029,6 @@ function AbaTaxas() {
 
 // ── ABA HISTÓRICO ─────────────────────────────────────────────────────────────
 
-function AbaHistorico() {
-  const [busca, setBusca] = useState("");
-  const ordens = db.get(K.ordens);
-  const filtradas = ordens.filter(o=>{
-    const q=busca.toLowerCase();
-    return !busca||o.placa?.toLowerCase().includes(q)||o.cliente?.toLowerCase().includes(q);
-  }).sort((a,b)=>(b.numero||0)-(a.numero||0));
-
-  return (
-    <div>
-      <input value={busca} onChange={e=>setBusca(e.target.value)} autoFocus
-        placeholder="🔍 Digite a placa ou nome do cliente..."
-        style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-          color:T.text,padding:"12px 16px",fontSize:14,fontFamily:"inherit",outline:"none",
-          marginBottom:16,boxSizing:"border-box"}} />
-      {filtradas.length===0 ? (
-        <div style={{textAlign:"center",color:T.muted,padding:60}}>
-          <div style={{fontSize:48,marginBottom:10}}>🔍</div>
-          <p>{busca?"Nenhum resultado.":"Digite para pesquisar."}</p>
-        </div>
-      ) : (
-        <div style={{display:"grid",gap:8}}>
-          {filtradas.map(os => {
-            const total = calcTotal(os);
-            return (
-              <Card key={os.id} style={{padding:"12px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-                  <div>
-                    <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:4}}>
-                      <span style={{fontWeight:900,color:T.accent}}>#{String(os.numero).padStart(4,"0")}</span>
-                      <span style={{fontWeight:700}}>{os.placa}</span>
-                      <Badge color={STATUS_COLOR[os.status]||T.muted}>{os.status}</Badge>
-                      {os.pagamentos?.length>0 && <Badge color={T.green}>💳 Pago</Badge>}
-                    </div>
-                    <div style={{fontSize:12,color:T.muted,marginBottom:4}}>
-                      {fmtDate(os.data)} · KM: {os.km||"-"} · {os.cliente}{os.telefone?" · "+os.telefone:""}
-                    </div>
-                    {os.servicos && <div style={{fontSize:12,color:T.sub,marginBottom:2}}>📌 {os.servicos}</div>}
-                    {os.itens.length>0 && <div style={{fontSize:11,color:T.muted}}>{os.itens.map(i=>i.descricao).join(" · ")}</div>}
-                    {os.observacao && <div style={{fontSize:11,color:T.muted,marginTop:4}}>💬 {os.observacao}</div>}
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontWeight:800,color:T.green,fontSize:15}}>{fmtBRL(total)}</div>
-                    {os.totalLiquido && <div style={{fontSize:11,color:T.muted}}>líq. {fmtBRL(os.totalLiquido)}</div>}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── ABA RELATÓRIOS ────────────────────────────────────────────────────────────
-
-function AbaRelatorios() {
-  const ordens = db.get(K.ordens).filter(o=>o.status==="Concluída");
-
-  const calcPer = (lista,ini,fim) => {
-    const f = lista.filter(o=>{ const dr = dataRelatorio(o); return dr>=ini&&dr<=fim; });
-    const bruto = f.reduce((s,o)=>s+calcTotal(o),0);
-    const liquido = f.reduce((s,o)=>s+(o.totalLiquido||calcTotal(o)),0);
-    const taxas = f.reduce((s,o)=>s+(o.totalTaxas||0),0);
-    return {qtd:f.length,bruto,liquido,taxas,ordens:f};
-  };
-
-  const t = today();
-  const dia = calcPer(ordens,t,t);
-  const d = new Date();
-  const dom = new Date(d); dom.setDate(d.getDate()-d.getDay());
-  const sab = new Date(d); sab.setDate(d.getDate()+(6-d.getDay()));
-  const semana = calcPer(ordens,dom.toISOString().slice(0,10),sab.toISOString().slice(0,10));
-  const mes = calcPer(ordens,t.slice(0,7)+"-01",t.slice(0,7)+"-31");
-
-  const dias30 = [];
-  for (let i=29;i>=0;i--) {
-    const dd = new Date(); dd.setDate(dd.getDate()-i);
-    const ds = dd.toISOString().slice(0,10);
-    const f = ordens.filter(o=>dataRelatorio(o)===ds);
-    dias30.push({
-      d:dd.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}),
-      v:f.reduce((s,o)=>s+calcTotal(o),0)
-    });
-  }
-  const maxV = Math.max(...dias30.map(d=>d.v),1);
-
-  const pgtosMes = {};
-  mes.ordens.forEach(os=>{
-    (os.pagamentos||[]).forEach(p=>{
-      const taxa = getTaxas().find(t=>t.id===p.taxaId);
-      const nome = taxa?.nome||"Outros";
-      if (!pgtosMes[nome]) pgtosMes[nome]={bruto:0,liq:0};
-      pgtosMes[nome].bruto+=parseFloat(p.valor||0);
-      pgtosMes[nome].liq+=parseFloat(p.valor||0)*(1-(taxa?.taxa||0)/100);
-    });
-  });
-
-  const Box = ({label,per}) => (
-    <Card style={{padding:18}}>
-      <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8}}>{label}</div>
-      <div style={{fontSize:24,fontWeight:900,color:T.text,marginBottom:4}}>{fmtBRL(per.bruto)}</div>
-      <div style={{fontSize:12,color:T.green,marginBottom:2}}>Líquido: {fmtBRL(per.liquido)}</div>
-      {per.taxas>0 && <div style={{fontSize:11,color:T.red}}>Taxa maquininha: -{fmtBRL(per.taxas)}</div>}
-      <div style={{fontSize:11,color:T.muted,marginTop:4}}>{per.qtd} OS concluída{per.qtd!==1?"s":""}</div>
-    </Card>
-  );
-
-  return (
-    <div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10,marginBottom:16}}>
-        <Box label="Hoje" per={dia} />
-        <Box label="Esta semana" per={semana} />
-        <Box label="Este mês" per={mes} />
-      </div>
-
-      <Card style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Faturamento — últimos 30 dias</div>
-        <div style={{display:"flex",alignItems:"flex-end",gap:2,height:90}}>
-          {dias30.map((d,i) => (
-            <div key={i} title={d.d+": "+fmtBRL(d.v)}
-              style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center"}}>
-              <div style={{width:"100%",background:d.v>0?T.accent:T.border,borderRadius:"2px 2px 0 0",
-                height:Math.max((d.v/maxV)*86,d.v>0?3:1)+"px",transition:"height .3s"}} />
-            </div>
-          ))}
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:T.muted}}>
-          <span>{dias30[0].d}</span><span>{dias30[29].d}</span>
-        </div>
-      </Card>
-
-      {Object.keys(pgtosMes).length>0 && (
-        <Card style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Por forma de pagamento — este mês</div>
-          {Object.entries(pgtosMes).map(([nome,v]) => (
-            <div key={nome} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"8px 0",borderBottom:"1px solid "+T.border}}>
-              <span style={{fontSize:13}}>{nome}</span>
-              <div style={{textAlign:"right"}}>
-                <span style={{fontWeight:700}}>{fmtBRL(v.bruto)}</span>
-                {v.bruto!==v.liq && <span style={{fontSize:11,color:T.green,marginLeft:8}}>→ líq. {fmtBRL(v.liq)}</span>}
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {mes.ordens.length>0 && (
-        <div>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>OS concluídas no mês</div>
-          {mes.ordens.sort((a,b)=>dataRelatorio(b).localeCompare(dataRelatorio(a))).map(os => {
-            const t = calcTotal(os);
-            return (
-              <Card key={os.id} style={{marginBottom:6,padding:"10px 14px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-                  <div>
-                    <span style={{fontWeight:700,color:T.accent,marginRight:8}}>#{String(os.numero).padStart(4,"0")}</span>
-                    <span>{os.placa}</span>
-                    <span style={{color:T.muted,fontSize:12,marginLeft:8}}>{os.cliente} · {fmtDate(dataRelatorio(os))}</span>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <span style={{fontWeight:800,color:T.green}}>{fmtBRL(t)}</span>
-                    {os.totalTaxas>0 && <span style={{fontSize:11,color:T.muted,marginLeft:8}}>líq. {fmtBRL(os.totalLiquido)}</span>}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 
 // ── BACKUP / RESTORE ─────────────────────────────────────────────────────────
@@ -2579,9 +2404,8 @@ export default function App() {
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"agenda",icon:"📅",label:"Agenda"},
-    {id:"historico",icon:"🔍",label:"Histórico"},
     {id:"produtos",icon:"📦",label:"Produtos"},
-    ...(isAdmin ? [{id:"taxas",icon:"💳",label:"Taxas"},{id:"relatorios",icon:"📊",label:"Relatórios"},{id:"analise",icon:"📈",label:"Análise"}] : []),
+    ...(isAdmin ? [{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
   return (
@@ -2610,10 +2434,8 @@ export default function App() {
       <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 12px"}}>
         {aba==="ordens" && <AbaOrdens nivelAcesso={usuario.nivel} />}
         {aba==="agenda" && <AbaAgenda />}
-        {aba==="historico" && <AbaHistorico />}
         {aba==="produtos" && <AbaProdutos />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
-        {aba==="relatorios" && isAdmin && <AbaRelatorios />}
         {aba==="analise" && <AbaAnalise />}
       </div>
       <Toast />
