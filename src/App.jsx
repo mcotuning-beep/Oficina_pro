@@ -2255,7 +2255,6 @@ function AbaAnalise(){
         <div style={{background:T.greenLo,border:"1px solid "+T.green+"33",borderRadius:10,padding:"10px 8px",textAlign:"center",marginBottom:8}}>
           <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Lucro Real do Mês</div>
           <div style={{fontSize:18,fontWeight:900,color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</div>
-          <div style={{fontSize:10,color:T.muted,marginTop:3}}>Líquido: {fmtR(liquidoFinal)}</div>
         </div>
         <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
