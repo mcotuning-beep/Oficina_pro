@@ -326,10 +326,7 @@ function ModalPagamento({ os, onSave, onClose }) {
 
   const salvar = () => {
     const hojeStr = new Date().toISOString().slice(0,10);
-    let contabilizarDiaMeta = isDiaUtilPadrao(hojeStr);
-    if(!contabilizarDiaMeta){
-      contabilizarDiaMeta = window.confirm("Hoje não é um dia útil padrão da oficina. Deseja considerar este dia para a meta mensal?");
-    }
+    const contabilizarDiaMeta = isDiaUtilPadrao(hojeStr);
     const outros = parseFloat(outrosCustos||0);
     const lucroReal = totalLiq - custoPecas - outros;
     const margemReal = (lucroReal / Math.max(0.01, totalComDesconto)) * 100;
