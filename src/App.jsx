@@ -66,14 +66,7 @@ const diasMetaAte = (ano, mes, ateDateStr, ordens=[]) => {
     const ds = `${ano}-${String(mes+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
     if(isDiaUtilPadrao(ds)) dias++;
   }
-  const extras = new Set();
-  (ordens||[]).forEach(o=>{
-    const ds = dataRelatorio(o);
-    if(!ds || o?.status !== "Concluída" || !o?.contabilizarDiaMeta) return;
-    const d = new Date(ds + "T12:00:00");
-    if(d.getFullYear() === ano && d.getMonth() === mes && !isDiaUtilPadrao(ds)) extras.add(ds);
-  });
-  return dias + extras.size;
+  return dias;
 };
 
 const TAXAS_PADRAO = [
