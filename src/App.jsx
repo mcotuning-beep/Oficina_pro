@@ -1197,6 +1197,8 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [os, setOs] = useState(ini||mk());
   const [buscaProd, setBuscaProd] = useState("");
   const [sugestoes, setSugestoes] = useState([]);
+  const [buscaCli, setBuscaCli] = useState("");
+  const [sugestoesCli, setSugestoesCli] = useState([]);
   const [modalProd, setModalProd] = useState(null);
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
@@ -1232,6 +1234,20 @@ function TelaOS({ os:ini, onSave, onClose }) {
       p.nome.toLowerCase().includes(q)||p.referencia?.toLowerCase().includes(q)
     ).slice(0,6));
   },[buscaProd]);
+
+  useEffect(()=>{
+    if (buscaCli.length<1) { setSugestoesCli([]); return; }
+    const q = buscaCli.toLowerCase();
+    setSugestoesCli(db.get(K.clientes).filter(c=>
+      c.nome.toLowerCase().includes(q)
+    ).slice(0,8));
+  },[buscaCli]);
+
+  const onSelectCliente = c => {
+    setOs(o=>({...o,cliente:c.nome,telefone:c.tel||o.telefone,fiscal:c.fiscal||o.fiscal}));
+    setBuscaCli("");
+    setSugestoesCli([]);
+  };
 
   const addProduto = p => {
     setOs(o=>({...o,itens:[...o.itens,{id:uid(),descricao:p.nome,qty:1,custo:p.custo,venda:p.venda}]}));
@@ -1359,7 +1375,21 @@ function TelaOS({ os:ini, onSave, onClose }) {
         </div>
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
-        <Inp label="Cliente" value={os.cliente} onChange={v=>upd("cliente",v)} placeholder="João Silva" />
+        <div style={{position:"relative"}}>
+          <Inp label="Cliente" value={os.cliente||buscaCli} onChange={v=>{upd("cliente",v);setBuscaCli(v);}} placeholder="João Silva" />
+          {(buscaCli.length>0 || (os.cliente && buscaCli==="")) && sugestoesCli.length>0 && (
+            <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:T.surface,border:"1px solid "+T.border,borderRadius:10,zIndex:50,overflow:"hidden",boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+              {sugestoesCli.map(c => (
+                <div key={c.id} onClick={()=>onSelectCliente(c)}
+                  style={{padding:"9px 14px",cursor:"pointer",borderBottom:"1px solid "+T.border,fontSize:13}}
+                  onMouseOver={e=>e.currentTarget.style.background=T.card}
+                  onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                  <span style={{fontWeight:600}}>{c.nome}</span><br/><span style={{fontSize:11,color:T.muted}}>{c.tel}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:3}}>
           <label style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>Telefone</label>
           <div style={{display:"flex",gap:4}}>
