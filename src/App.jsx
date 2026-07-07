@@ -1345,6 +1345,18 @@ function TelaOS({ os:ini, onSave, onClose }) {
             })()}
           </div>
         </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          <Inp label="KM atual" value={os.km} onChange={v=>upd("km",v)} placeholder="85000" />
+          <Sel label="Tipo" value={os.tipo||"OS"} onChange={v=>{
+              upd("tipo",v);
+              if(v==="Orçamento") upd("status","Orçamento");
+              else upd("status","Aberta");
+            }}
+            options={["OS","Orçamento"]} />
+          <Sel label="Status" value={os.tipo==="Orçamento"?"Orçamento":os.status}
+            onChange={v=>upd("status",v)}
+            options={os.tipo==="Orçamento"?["Orçamento"]:["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />
+        </div>
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
         <Inp label="Cliente" value={os.cliente} onChange={v=>upd("cliente",v)} placeholder="João Silva" />
@@ -1381,18 +1393,6 @@ function TelaOS({ os:ini, onSave, onClose }) {
           </div>
         </div>
         <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-          <Inp label="KM atual" value={os.km} onChange={v=>upd("km",v)} placeholder="85000" />
-          <Sel label="Tipo" value={os.tipo||"OS"} onChange={v=>{
-              upd("tipo",v);
-              if(v==="Orçamento") upd("status","Orçamento");
-              else upd("status","Aberta");
-            }}
-            options={["OS","Orçamento"]} />
-          <Sel label="Status" value={os.tipo==="Orçamento"?"Orçamento":os.status}
-            onChange={v=>upd("status",v)}
-            options={os.tipo==="Orçamento"?["Orçamento"]:["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />
-        </div>
         <BotaoAgenda os={os} />
       </div>
 
