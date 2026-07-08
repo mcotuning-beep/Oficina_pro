@@ -2162,6 +2162,167 @@ function BotaoBackup() {
   );
 }
 
+// ── ABA SIMULADOR ─────────────────────────────────────────────────────────────
+function AbaSimulador(){
+  const taxas = getTaxas();
+  const [modo, setModo] = useState("cobrar");
+  const [valor, setValor] = useState("");
+  const [taxaId, setTaxaId] = useState("t1");
+
+  const taxa = taxas.find(t => t.id === taxaId) || taxas[0];
+  const taxaPct = taxa?.taxa || 0;
+
+  // COBRAR: quanto pedir → quanto recebo
+  const valorCobrar = parseFloat(valor) || 0;
+  const taxaAplicada = valorCobrar * (taxaPct / 100);
+  const recebimento = valorCobrar - taxaAplicada;
+
+  // RECEBER: quanto quero receber → quanto cobrar
+  const valorDesejado = parseFloat(valor) || 0;
+  const valorACobrar = taxaPct > 0 ? (valorDesejado * 100) / (100 - taxaPct) : valorDesejado;
+  const taxaAplicada2 = valorACobrar - valorDesejado;
+
+  return (
+    <div style={{padding:4}}>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <button
+          onClick={() => { setModo("cobrar"); setValor(""); }}
+          style={{
+            flex:1,padding:"10px 14px",
+            background: modo === "cobrar" ? T.blue : T.surface,
+            border: "1px solid " + (modo === "cobrar" ? T.blue : T.border),
+            borderRadius:8,color: T.text,fontWeight: 700,cursor: "pointer",
+            fontSize: 13,fontFamily: "inherit"
+          }}
+        >
+          💰 Quanto Cobrar?
+        </button>
+        <button
+          onClick={() => { setModo("receber"); setValor(""); }}
+          style={{
+            flex:1,padding:"10px 14px",
+            background: modo === "receber" ? T.blue : T.surface,
+            border: "1px solid " + (modo === "receber" ? T.blue : T.border),
+            borderRadius:8,color: T.text,fontWeight: 700,cursor: "pointer",
+            fontSize: 13,fontFamily: "inherit"
+          }}
+        >
+          ✅ Quanto Recebo?
+        </button>
+      </div>
+
+      <Card style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:10,color:T.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+          {modo === "cobrar" ? "Valor de Venda" : "Valor Desejado"}
+        </div>
+        <input
+          type="number"
+          value={valor}
+          onChange={e => setValor(e.target.value)}
+          placeholder="0,00"
+          style={{
+            width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+            color:T.text,padding:"10px 12px",fontSize:18,fontWeight:700,
+            boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"
+          }}
+        />
+      </Card>
+
+      <Card style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:10,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+          Forma de Pagamento
+        </div>
+        <select
+          value={taxaId}
+          onChange={e => setTaxaId(e.target.value)}
+          style={{
+            width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+            color:T.text,padding:"10px 12px",fontSize:13,fontWeight:600,
+            boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark",cursor:"pointer"
+          }}
+        >
+          {taxas.map(t => (
+            <option key={t.id} value={t.id} style={{background:T.bg,color:T.text}}>
+              {t.nome}{t.taxa > 0 ? " (" + t.taxa + "%" + (t.parcelas > 1 ? ", " + t.parcelas + "x" : "") + ")" : " (Sem taxa)"}
+            </option>
+          ))}
+        </select>
+      </Card>
+
+      {modo === "cobrar" && (
+        <div style={{display:"grid",gap:10}}>
+          <Card style={{padding:12,background:T.card,border:"2px solid "+T.green}}>
+            <div style={{fontSize:10,color:T.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+              📊 Você vai receber
+            </div>
+            <div style={{fontSize:28,fontWeight:900,color:T.green,marginBottom:8}}>
+              {fmtBRL(recebimento)}
+            </div>
+            {taxaPct > 0 && (
+              <div style={{fontSize:11,color:T.muted}}>
+                Descontar {fmtBRL(taxaAplicada)} de taxa ({taxaPct}%)
+              </div>
+            )}
+          </Card>
+          {taxaPct > 0 && valor && (
+            <Card style={{padding:12,background:T.accentLo,border:"1px solid "+T.accent}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Valor Original</div>
+                  <div style={{fontWeight:700,color:T.text}}>{fmtBRL(valorCobrar)}</div>
+                </div>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Taxa</div>
+                  <div style={{fontWeight:700,color:T.red}}>-{fmtBRL(taxaAplicada)}</div>
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {modo === "receber" && (
+        <div style={{display:"grid",gap:10}}>
+          <Card style={{padding:12,background:T.card,border:"2px solid "+T.green}}>
+            <div style={{fontSize:10,color:T.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+              💡 Sugestão: Cobre
+            </div>
+            <div style={{fontSize:28,fontWeight:900,color:T.green,marginBottom:8}}>
+              {fmtBRL(valorACobrar)}
+            </div>
+            {taxaPct > 0 && (
+              <div style={{fontSize:11,color:T.muted}}>
+                Depois da taxa, você recebe {fmtBRL(valorDesejado)}
+              </div>
+            )}
+          </Card>
+          {taxaPct > 0 && valor && (
+            <Card style={{padding:12,background:T.accentLo,border:"1px solid "+T.accent}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Cobrar</div>
+                  <div style={{fontWeight:700,color:T.text}}>{fmtBRL(valorACobrar)}</div>
+                </div>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Taxa</div>
+                  <div style={{fontWeight:700,color:T.red}}>-{fmtBRL(taxaAplicada2)}</div>
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {!valor && (
+        <div style={{textAlign:"center",padding:40,color:T.muted}}>
+          <div style={{fontSize:40,marginBottom:8}}>🔮</div>
+          <div style={{fontSize:13}}>Digite um valor para começar</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ── ABA ANÁLISE ───────────────────────────────────────────────────────────────
 function AbaAnalise(){
@@ -2434,6 +2595,7 @@ export default function App() {
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"agenda",icon:"📅",label:"Agenda"},
     {id:"produtos",icon:"📦",label:"Produtos"},
+    {id:"simulador",icon:"🧮",label:"Simulador"},
     ...(isAdmin ? [{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
@@ -2464,6 +2626,7 @@ export default function App() {
         {aba==="ordens" && <AbaOrdens nivelAcesso={usuario.nivel} />}
         {aba==="agenda" && <AbaAgenda />}
         {aba==="produtos" && <AbaProdutos />}
+        {aba==="simulador" && <AbaSimulador />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && <AbaAnalise />}
       </div>
