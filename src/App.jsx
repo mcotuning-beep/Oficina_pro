@@ -49,6 +49,9 @@ const isFeriadoOficina = (dateStr) => {
 };
 const isDiaUtilPadrao = (dateStr) => {
   if(!dateStr) return false;
+  const config = getConfig();
+  const feriadoMarcado = config.feriadoHoje === dateStr;
+  if(feriadoMarcado) return false;
   const d = new Date(dateStr + "T12:00:00");
   const wd = d.getDay();
   return wd >= 1 && wd <= 5 && !isFeriadoOficina(dateStr);
@@ -2331,6 +2334,7 @@ function AbaAnalise(){
   const hoje = new Date();
   const [periodo, setPeriodo] = useState({m: hoje.getMonth(), a: hoje.getFullYear()});
   const [metaDiaria, setMetaDiaria] = useState(getConfig().metaDiariaLucro || "");
+  const [feriadoHoje, setFeriadoHoje] = useState(getConfig().feriadoHoje === today() || false);
 
   const navMes = (dir) => {
     setPeriodo(p => {
@@ -2458,6 +2462,12 @@ function AbaAnalise(){
                 style={{width:95,background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"7px 8px",fontSize:13,fontWeight:800,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
               <button onClick={()=>{setConfig({metaDiariaLucro:metaDiaria});toast("Meta diária salva!");}}
                 style={{background:T.blueLo,border:"1px solid "+T.blue+"66",borderRadius:8,color:T.blue,padding:"7px 10px",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
+              <input type="checkbox" checked={feriadoHoje} onChange={e=>{
+                setFeriadoHoje(e.target.checked);
+                setConfig({feriadoHoje: e.target.checked ? today() : null});
+                toast(e.target.checked ? "📅 Hoje marcado como feriado" : "✅ Feriado desmarcado");
+              }} style={{width:20,height:20,cursor:"pointer"}} title="Marcar hoje como feriado" />
+              <span style={{fontSize:11,color:T.muted}}>Feriado hoje</span>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:8}}>
