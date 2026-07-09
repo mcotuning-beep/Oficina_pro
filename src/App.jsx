@@ -2457,17 +2457,21 @@ function AbaAnalise(){
               <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta acumulada de lucro</div>
               <div style={{fontSize:10,color:T.muted}}>Segunda a sexta. Sábado/domingo/feriado só entra se você confirmar no fechamento.</div>
             </div>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input type="number" value={metaDiaria} onChange={e=>setMetaDiaria(e.target.value)} placeholder="0,00"
-                style={{width:95,background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"7px 8px",fontSize:13,fontWeight:800,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
-              <button onClick={()=>{setConfig({metaDiariaLucro:metaDiaria});toast("Meta diária salva!");}}
-                style={{background:T.blueLo,border:"1px solid "+T.blue+"66",borderRadius:8,color:T.blue,padding:"7px 10px",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
-              <input type="checkbox" checked={feriadoHoje} onChange={e=>{
-                setFeriadoHoje(e.target.checked);
-                setConfig({feriadoHoje: e.target.checked ? today() : null});
-                toast(e.target.checked ? "📅 Hoje marcado como feriado" : "✅ Feriado desmarcado");
-              }} style={{width:20,height:20,cursor:"pointer"}} title="Marcar hoje como feriado" />
-              <span style={{fontSize:11,color:T.muted}}>Feriado hoje</span>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input type="number" value={metaDiaria} onChange={e=>setMetaDiaria(e.target.value)} placeholder="0,00"
+                  style={{width:95,background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"7px 8px",fontSize:13,fontWeight:800,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",colorScheme:"dark"}} />
+                <button onClick={()=>{setConfig({metaDiariaLucro:metaDiaria});toast("Meta diária salva!");}}
+                  style={{background:T.blueLo,border:"1px solid "+T.blue+"66",borderRadius:8,color:T.blue,padding:"7px 10px",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input type="checkbox" checked={feriadoHoje} onChange={e=>{
+                  setFeriadoHoje(e.target.checked);
+                  setConfig({feriadoHoje: e.target.checked ? today() : null});
+                  toast(e.target.checked ? "📅 Hoje marcado como feriado" : "✅ Feriado desmarcado");
+                }} style={{width:20,height:20,cursor:"pointer"}} title="Marcar hoje como feriado" />
+                <span style={{fontSize:11,color:T.muted}}>Feriado hoje</span>
+              </div>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:8}}>
