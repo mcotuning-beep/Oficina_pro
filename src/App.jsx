@@ -7,7 +7,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -89,6 +89,8 @@ const TAXAS_PADRAO = [
   {id:"t13",nome:"Crédito 10x",      parcelas:10, taxa:11.75, obs:"Recebe na hora"},
 ];
 const getTaxas = () => { const s=db.get(K.taxas); return s.length?s:TAXAS_PADRAO; };
+const getDadosPagamento = () => { try { return JSON.parse(localStorage.getItem(K.pagamento)||"{}"); } catch { return {}; } };
+const setDadosPagamento = v => localStorage.setItem(K.pagamento, JSON.stringify(v));
 
 // ── PRÉ-CARREGA DADOS DA PLANILHA (executa uma única vez) ────────────────────
 (function seedData() {
@@ -742,6 +744,20 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
 
 ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao+"</div>":""}
 
+${os.incluirDadosPagamento?(()=>{
+  const dp = getDadosPagamento();
+  if(!dp.nome) return "";
+  let html = "<div class=\"info-grid\" style=\"margin-top:12px\">"; 
+  if(dp.nome) html += "<div class=\"info-card\"><div class=\"info-title\">Titular</div><div class=\"info-value\">" + dp.nome + "</div></div>";
+  if(dp.banco) html += "<div class=\"info-card\"><div class=\"info-title\">Banco</div><div class=\"info-value\">" + dp.banco + "</div></div>";
+  if(dp.agencia) html += "<div class=\"info-card\"><div class=\"info-title\">Agência</div><div class=\"info-value\">" + dp.agencia + "</div></div>";
+  if(dp.conta) html += "<div class=\"info-card\"><div class=\"info-title\">Conta</div><div class=\"info-value\">" + dp.conta + "</div></div>";
+  if(dp.cnpj) html += "<div class=\"info-card\"><div class=\"info-title\">CPF / CNPJ</div><div class=\"info-value\">" + dp.cnpj + "</div></div>";
+  if(dp.pix) html += "<div class=\"info-card\"><div class=\"info-title\">PIX</div><div class=\"info-value\">" + dp.pix + "</div></div>";
+  html += "</div>";
+  return html;
+})():""}
+
 <div class="thanks">Agradecemos a preferência!</div>
 <div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
 <div class="foot">
@@ -1192,10 +1208,39 @@ function ModalDadosFiscais({ os, onSave, onClose }) {
   </Modal>;
 }
 
+function ModalDadosPagamento({ onSave, onClose }) {
+  const [dados, setDados] = useState(getDadosPagamento());
+  const set = (k,v) => setDados(o=>({...o,[k]:v}));
+  const salvar = () => {
+    setDadosPagamento(dados);
+    onSave(dados);
+    toast("Dados de pagamento salvos!");
+  };
+  return <Modal title="💳 Dados para Pagamento" onClose={onClose} w={560}>
+    <div style={{display:"grid",gap:12}}>
+      <div style={{background:T.surface,borderRadius:8,padding:12,fontSize:11,color:T.muted}}>
+        ℹ️ Configure aqui seus dados de pagamento (banco, PIX, etc). Use na O.S. quando necessário.
+      </div>
+      <Inp label="Nome completo" value={dados.nome||""} onChange={v=>set("nome",v)} placeholder="Seu nome" />
+      <Inp label="CPF / CNPJ (PIX)" value={dados.cnpj||""} onChange={v=>set("cnpj",v)} placeholder="00000000000191 ou CPF" />
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <Inp label="Banco" value={dados.banco||""} onChange={v=>set("banco",v)} placeholder="Santander" />
+        <Inp label="Agência" value={dados.agencia||""} onChange={v=>set("agencia",v)} placeholder="2056" />
+      </div>
+      <Inp label="Conta corrente" value={dados.conta||""} onChange={v=>set("conta",v)} placeholder="0013002281-2" />
+      <Inp label="Chave PIX (opcional)" value={dados.pix||""} onChange={v=>set("pix",v)} placeholder="Email, telefone ou chave aleatória" />
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+        <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
+        <Btn v="green" onClick={salvar} full>💾 Salvar</Btn>
+      </div>
+    </div>
+  </Modal>;
+}
+
 function TelaOS({ os:ini, onSave, onClose }) {
   const mk = () => ({id:uid(),numero:null,placa:"",veiculo:"",ano:"",cliente:"",
     telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",outrosCustos:"",
-    status:"Aberta",tipo:"OS",data:today(),pagamentos:[]});
+    status:"Aberta",tipo:"OS",data:today(),pagamentos:[],incluirDadosPagamento:false});
 
   const [os, setOs] = useState(ini||mk());
   const [buscaProd, setBuscaProd] = useState("");
@@ -1206,6 +1251,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
   const [fiscalOpen, setFiscalOpen] = useState(false);
+  const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
   const [aiLoad, setAiLoad] = useState(false);
   const [aiResp, setAiResp] = useState("");
 
@@ -1426,6 +1472,15 @@ function TelaOS({ os:ini, onSave, onClose }) {
           </div>
         </div>
         <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input type="checkbox" checked={os.incluirDadosPagamento||false} onChange={e=>upd("incluirDadosPagamento",e.target.checked)}
+            style={{width:18,height:18,cursor:"pointer",accentColor:T.green}} />
+          <label style={{fontSize:12,color:T.text,cursor:"pointer",flex:1,userSelect:"none"}}
+            onClick={()=>upd("incluirDadosPagamento",!os.incluirDadosPagamento)}>
+            💳 Incluir dados de pagamento nesta O.S.
+          </label>
+          <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
+        </div>
         <BotaoAgenda os={os} />
       </div>
 
@@ -1627,6 +1682,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
       {modalProd && <ModalNovoProduto nome={modalProd} onClose={()=>setModalProd(null)} onSave={p=>{setModalProd(null);addProduto(p);}} />}
       {previaOpen && <ModalImpressao os={os} onClose={()=>setPreviaOpen(false)} />}
       {fiscalOpen && <ModalDadosFiscais os={os} onClose={()=>setFiscalOpen(false)} onSave={f=>{setOs(o=>({...o,fiscal:f}));setFiscalOpen(false);}} />}
+      {dadosPagamentoOpen && <ModalDadosPagamento onSave={()=>setDadosPagamentoOpen(false)} onClose={()=>setDadosPagamentoOpen(false)} />}
       {pagtoOpen && <ModalPagamento os={os} onClose={()=>setPagtoOpen(false)}
         onSave={novaOS=>{setOs(novaOS);setPagtoOpen(false);onSave&&onSave(novaOS);}} />}
     </div>
