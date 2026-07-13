@@ -747,14 +747,16 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
 ${os.incluirDadosPagamento?(()=>{
   const dp = getDadosPagamento();
   if(!dp.nome) return "";
-  let html = "<div class=\"info-grid\" style=\"margin-top:12px\">"; 
-  if(dp.nome) html += "<div class=\"info-card\"><div class=\"info-title\">Titular</div><div class=\"info-value\">" + dp.nome + "</div></div>";
-  if(dp.banco) html += "<div class=\"info-card\"><div class=\"info-title\">Banco</div><div class=\"info-value\">" + dp.banco + "</div></div>";
-  if(dp.agencia) html += "<div class=\"info-card\"><div class=\"info-title\">Agência</div><div class=\"info-value\">" + dp.agencia + "</div></div>";
-  if(dp.conta) html += "<div class=\"info-card\"><div class=\"info-title\">Conta</div><div class=\"info-value\">" + dp.conta + "</div></div>";
-  if(dp.cnpj) html += "<div class=\"info-card\"><div class=\"info-title\">CPF / CNPJ</div><div class=\"info-value\">" + dp.cnpj + "</div></div>";
-  if(dp.pix) html += "<div class=\"info-card\"><div class=\"info-title\">PIX</div><div class=\"info-value\">" + dp.pix + "</div></div>";
-  html += "</div>";
+  let html = "<div style=\"background:#f9f5e8;border:1px solid #d4a574;border-radius:6px;padding:8px 10px;margin-top:10px;margin-bottom:4px;font-size:8px;\">";
+  html += "<div style=\"font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#8b6f47;margin-bottom:4px;\">\ud83d\udcb3 DADOS PARA PAGAMENTO</div>";
+  html += "<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:6px;row-gap:3px;\">";
+  if(dp.nome) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">Titular:</span> <span style=\"font-weight:600;\">" + dp.nome + "</span></span>";
+  if(dp.banco) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">Banco:</span> <span style=\"font-weight:600;\">" + dp.banco + "</span></span>";
+  if(dp.agencia) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">Ag:</span> <span style=\"font-weight:600;\">" + dp.agencia + "</span></span>";
+  if(dp.conta) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">CC:</span> <span style=\"font-weight:600;\">" + dp.conta + "</span></span>";
+  if(dp.cnpj) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">PIX:</span> <span style=\"font-weight:600;\">" + dp.cnpj + "</span></span>";
+  if(dp.pix && dp.pix !== dp.cnpj) html += "<span><span style=\"color:#666;font-size:7px;font-weight:700;\">PIX Alt:</span> <span style=\"font-weight:600;\">" + dp.pix + "</span></span>";
+  html += "</div></div>";
   return html;
 })():""}
 
