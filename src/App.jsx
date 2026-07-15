@@ -2001,9 +2001,9 @@ function AbaOrdens({ nivelAcesso }) {
     let mD = true;
     if(ordenacao==="data_conclusao"){
       const dataOS = o.dataConclusao||o.data||"0000-00-00";
-      const [y,m] = dataOS.split("-");
-      const [currentY,currentM] = today().split("-");
-      mD = y===currentY&&m===currentM;
+      const mesOS = dataOS.substring(0,7);
+      const mesAtual = today().substring(0,7);
+      mD = mesOS===mesAtual;
     }
     return mQ&&mS&&mD;
   }).sort((a,b)=>{
