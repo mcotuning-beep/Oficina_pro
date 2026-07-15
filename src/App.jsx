@@ -91,6 +91,8 @@ const TAXAS_PADRAO = [
 const getTaxas = () => { const s=db.get(K.taxas); return s.length?s:TAXAS_PADRAO; };
 const getDadosPagamento = () => { try { return JSON.parse(localStorage.getItem(K.pagamento)||"{}"); } catch { return {}; } };
 const setDadosPagamento = v => localStorage.setItem(K.pagamento, JSON.stringify(v));
+const getOpcoesPagamento = () => { try { return JSON.parse(localStorage.getItem("op_opcoes_pgto")||"[]"); } catch { return []; } };
+const setOpcoesPagamento = v => localStorage.setItem("op_opcoes_pgto", JSON.stringify(v));
 
 // ── PRÉ-CARREGA DADOS DA PLANILHA (executa uma única vez) ────────────────────
 (function seedData() {
@@ -728,21 +730,34 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
 
 <div class="tot"><span>Total</span><span>R$ ${total.toFixed(2).replace(".",",")}</span></div>
 
-<div class="warranty-box">
+${os.tipo !== "Orçamento" ? `<div class="warranty-box">
   <div class="warranty-icon">🛡️</div>
   <div>
     <div class="warranty-title">Garantia</div>
     <div class="warranty-text"><b>Prazo:</b> ${garantiaTexto}${garantiaValidade ? " — válida até " + garantiaValidade : ""}</div>
     <div class="warranty-text">A garantia cobre exclusivamente os serviços e materiais descritos nesta Ordem de Serviço. Não cobre desgaste natural, mau uso, acidentes, adaptações ou serviços realizados por terceiros.</div>
   </div>
-</div>
+</div>` : ""}
 
-<div class="info-grid">
+${os.tipo !== "Orçamento" ? `<div class="info-grid">
   <div class="info-card"><div class="info-title">Forma de pagamento</div><div class="info-value">${formaPagamentoTexto}</div></div>
   <div class="info-card"><div class="info-title">Data da conclusão</div><div class="info-value">${dataConclusaoTexto}</div></div>
-</div>
+</div>` : ""}
 
 ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao+"</div>":""}
+
+${os.incluirOpcoesPagamento?(()=>{
+  const opcoes = getOpcoesPagamento();
+  if(!opcoes.length) return "";
+  let html = "<div style=\"background:#f0f8ff;border:1px solid #4a90e2;border-radius:6px;padding:8px 10px;margin-top:10px;margin-bottom:4px;font-size:8px;\">
+    <div style=\"font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#2c5aa0;margin-bottom:4px;\">\ud83d\udcb0 OPÇÕES DE PAGAMENTO</div>
+    <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:6px;row-gap:3px;\">";
+  opcoes.forEach(op => {
+    html += "<span><span style=\"color:#333;font-size:7px;font-weight:700;\">✓</span> <span style=\"font-weight:600;\">"+op.nome+"</span></span>";
+  });
+  html += "</div></div>";
+  return html;
+})():""}
 
 ${os.incluirDadosPagamento?(()=>{
   const dp = getDadosPagamento();
@@ -1239,6 +1254,63 @@ function ModalDadosPagamento({ onSave, onClose }) {
   </Modal>;
 }
 
+function ModalOpcoesPagamento({ onClose }) {
+  const [opcoes, setOpcoes] = useState(getOpcoesPagamento());
+  const [novaOpcao, setNovaOpcao] = useState({nome:"",descricao:""});
+  
+  const adicionar = () => {
+    if(!novaOpcao.nome.trim()) return;
+    setOpcoes(o=>[...o, {id:uid(),nome:novaOpcao.nome,descricao:novaOpcao.descricao}]);
+    setNovaOpcao({nome:"",descricao:""});
+    toast("Opção de pagamento adicionada!");
+  };
+  
+  const remover = (id) => {
+    setOpcoes(o=>o.filter(x=>x.id!==id));
+    toast("Opção removida!");
+  };
+  
+  const salvar = () => {
+    setOpcoesPagamento(opcoes);
+    toast("Opções de pagamento salvas!");
+    onClose();
+  };
+  
+  return <Modal title="💰 Opções de Pagamento" onClose={onClose} w={580}>
+    <div style={{display:"grid",gap:12}}>
+      <div style={{background:T.surface,borderRadius:8,padding:12,fontSize:11,color:T.muted}}>
+        ℹ️ Cadastre as formas de pagamento que você trabalha. Opcionalmente inclua nas O.S.
+      </div>
+      
+      <div style={{display:"grid",gap:8,background:T.card,borderRadius:8,padding:12}}>
+        <Inp label="Nova opção de pagamento" value={novaOpcao.nome||""} onChange={v=>setNovaOpcao(o=>({...o,nome:v}))} placeholder="Ex: Dinheiro, PIX, Débito, Crédito à vista..." />
+        <Inp label="Descrição (opcional)" value={novaOpcao.descricao||""} onChange={v=>setNovaOpcao(o=>({...o,descricao:v}))} placeholder="Ex: PIX direto na conta" />
+        <Btn v="purple" onClick={adicionar} full>➕ Adicionar</Btn>
+      </div>
+      
+      {opcoes.length > 0 && (
+        <div style={{display:"grid",gap:6}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:0.5}}>Opções cadastradas</div>
+          {opcoes.map(op => (
+            <div key={op.id} style={{background:T.surface,borderRadius:6,padding:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,color:T.text}}>{op.nome}</div>
+                {op.descricao && <div style={{fontSize:10,color:T.muted,marginTop:2}}>{op.descricao}</div>}
+              </div>
+              <button onClick={()=>remover(op.id)} style={{background:T.red,border:"none",borderRadius:4,color:"#fff",padding:"4px 8px",cursor:"pointer",fontSize:11,fontWeight:600}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+        <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
+        <Btn v="green" onClick={salvar} full>💾 Salvar</Btn>
+      </div>
+    </div>
+  </Modal>;
+}
+
 function TelaOS({ os:ini, onSave, onClose }) {
   const mk = () => ({id:uid(),numero:null,placa:"",veiculo:"",ano:"",cliente:"",
     telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",outrosCustos:"",
@@ -1254,6 +1326,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [pagtoOpen, setPagtoOpen] = useState(false);
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
+  const [opcoesPagamentoOpen, setOpcoesPagamentoOpen] = useState(false);
   const [aiLoad, setAiLoad] = useState(false);
   const [aiResp, setAiResp] = useState("");
 
@@ -1669,27 +1742,37 @@ function TelaOS({ os:ini, onSave, onClose }) {
           placeholder="Condições do veículo, prazo, próxima revisão..." rows={2}
           style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",colorScheme:"dark"}} />
-        {/* Garantia */}
+        {/* Garantia - Oculto se for ORÇAMENTO */}
+        {os.tipo !== "Orçamento" && (
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+            <span style={{fontSize:12,color:T.muted,flexShrink:0}}>🛡 Garantia:</span>
+            <input type="number" value={os.garantiaMeses||""} onChange={e=>upd("garantiaMeses",e.target.value)}
+              placeholder="0" min="0" max="60"
+              style={{width:60,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+              color:T.text,padding:"6px 8px",fontSize:13,outline:"none",fontFamily:"inherit",
+              colorScheme:"dark",textAlign:"center"}}/>
+            <span style={{fontSize:12,color:T.muted}}>mese{os.garantiaMeses==1?"":"s"}</span>
+            {os.garantiaMeses>0&&os.data&&(()=>{
+              const d=new Date(os.data+"T12:00:00");
+              d.setMonth(d.getMonth()+parseInt(os.garantiaMeses||0));
+              return <span style={{fontSize:11,color:T.green,marginLeft:4}}>✓ até {d.toLocaleDateString("pt-BR")}</span>;
+            })()}
+          </div>
+        )}
+
+        {/* Incluir opções de pagamento */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
-          <span style={{fontSize:12,color:T.muted,flexShrink:0}}>🛡 Garantia:</span>
-          <input type="number" value={os.garantiaMeses||""} onChange={e=>upd("garantiaMeses",e.target.value)}
-            placeholder="0" min="0" max="60"
-            style={{width:60,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-            color:T.text,padding:"6px 8px",fontSize:13,outline:"none",fontFamily:"inherit",
-            colorScheme:"dark",textAlign:"center"}}/>
-          <span style={{fontSize:12,color:T.muted}}>mese{os.garantiaMeses==1?"":"s"}</span>
-          {os.garantiaMeses>0&&os.data&&(()=>{
-            const d=new Date(os.data+"T12:00:00");
-            d.setMonth(d.getMonth()+parseInt(os.garantiaMeses||0));
-            return <span style={{fontSize:11,color:T.green,marginLeft:4}}>✓ até {d.toLocaleDateString("pt-BR")}</span>;
-          })()}
+          <input type="checkbox" checked={os.incluirOpcoesPagamento||false} onChange={e=>upd("incluirOpcoesPagamento",e.target.checked)}
+            style={{width:16,height:16,cursor:"pointer",accent:T.accent}}/>
+          <span style={{fontSize:12,color:T.muted}}>📋 Incluir opções de pagamento no orçamento</span>
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      <div style={{display:"grid",gridTemplateColumns:os.tipo==="Orçamento"?"1fr 1fr 1fr":"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
         <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>👁 Prévia</Btn>
-        <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>💳 Fechar Pgto</Btn>
+        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>💳 Fechar Pgto</Btn>}
+        {os.tipo === "Orçamento" && <Btn v="purple" onClick={()=>setOpcoesPagamentoOpen(true)} full>💰 Op. Pagamento</Btn>}
         <Btn onClick={()=>salvar()} full>💾 Salvar OS</Btn>
       </div>
       {os.numero && (
@@ -1700,6 +1783,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
       {previaOpen && <ModalImpressao os={os} onClose={()=>setPreviaOpen(false)} />}
       {fiscalOpen && <ModalDadosFiscais os={os} onClose={()=>setFiscalOpen(false)} onSave={f=>{setOs(o=>({...o,fiscal:f}));setFiscalOpen(false);}} />}
       {dadosPagamentoOpen && <ModalDadosPagamento onSave={()=>setDadosPagamentoOpen(false)} onClose={()=>setDadosPagamentoOpen(false)} />}
+      {opcoesPagamentoOpen && <ModalOpcoesPagamento onClose={()=>setOpcoesPagamentoOpen(false)} />}
       {pagtoOpen && <ModalPagamento os={os} onClose={()=>setPagtoOpen(false)}
         onSave={novaOS=>{setOs(novaOS);setPagtoOpen(false);onSave&&onSave(novaOS);}} />}
     </div>
