@@ -1998,7 +1998,14 @@ function AbaOrdens({ nivelAcesso }) {
     const q = busca.toLowerCase();
     const mQ = !busca||o.placa?.toLowerCase().includes(q)||o.cliente?.toLowerCase().includes(q)||String(o.numero).includes(q);
     const mS = filtroStatus==="Todas"||o.status===filtroStatus;
-    return mQ&&mS;
+    let mD = true;
+    if(ordenacao==="data_conclusao"){
+      const dataOS = o.dataConclusao||o.data||"0000-00-00";
+      const [y,m] = dataOS.split("-");
+      const [currentY,currentM] = today().split("-");
+      mD = y===currentY&&m===currentM;
+    }
+    return mQ&&mS&&mD;
   }).sort((a,b)=>{
     if(ordenacao==="data_conclusao"){
       const dA = (a.dataConclusao||a.data||'0');
