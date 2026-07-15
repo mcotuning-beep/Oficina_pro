@@ -2003,7 +2003,7 @@ function AbaOrdens({ nivelAcesso }) {
     if(ordenacao==="data_conclusao"){
       const dataA = new Date(a.dataConclusao||a.data||0).getTime();
       const dataB = new Date(b.dataConclusao||b.data||0).getTime();
-      return dataB-dataA;
+      return dataA-dataB;
     }
     return (b.numero||0)-(a.numero||0);
   });
