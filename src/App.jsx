@@ -2001,9 +2001,9 @@ function AbaOrdens({ nivelAcesso }) {
     return mQ&&mS;
   }).sort((a,b)=>{
     if(ordenacao==="data_conclusao"){
-      const dataA = new Date(a.dataConclusao||a.data||0).getTime();
-      const dataB = new Date(b.dataConclusao||b.data||0).getTime();
-      return dataB-dataA;
+      const dA = (a.dataConclusao||a.data||'0');
+      const dB = (b.dataConclusao||b.data||'0');
+      return dB.localeCompare(dA);
     }
     return (b.numero||0)-(a.numero||0);
   });
