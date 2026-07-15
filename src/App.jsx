@@ -1556,8 +1556,15 @@ function TelaOS({ os:ini, onSave, onClose }) {
           <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
         </div>
 
-        {/* Botão de Opções de Pagamento - sempre visível */}
-        <button onClick={()=>setOpcoesPagamentoOpen(true)} style={{width:"100%",background:"transparent",border:"1px solid "+T.border,borderRadius:8,color:T.sub,padding:"8px 18px",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:6,fontFamily:"inherit",transition:"opacity .15s"}}>💰 Opções de Pagamento</button>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderTop:"1px solid "+T.border,borderBottom:"1px solid "+T.border}}>
+          <input type="checkbox" checked={os.incluirOpcoesPagamento||false} onChange={e=>upd("incluirOpcoesPagamento",e.target.checked)}
+            style={{width:18,height:18,cursor:"pointer",accentColor:T.blue}} />
+          <label style={{fontSize:12,color:T.text,cursor:"pointer",flex:1,userSelect:"none"}}
+            onClick={()=>upd("incluirOpcoesPagamento",!os.incluirOpcoesPagamento)}>
+            💰 Incluir opções de pagamento nesta O.S.
+          </label>
+          <Btn v="ghost" onClick={()=>setOpcoesPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
+        </div>
 
         <BotaoAgenda os={os} />
       </div>
