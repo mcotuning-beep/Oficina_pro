@@ -2083,7 +2083,7 @@ function AbaOrdens({ nivelAcesso }) {
                         {os.tipo==="Orçamento"&&<Badge color={T.purple}>Orçamento</Badge>}
                       </div>
                       <div style={{fontSize:11,color:T.muted}}>
-                        {os.cliente} · {fmtDate(os.data)} · {os.itens.length} peça(s)
+                        {os.cliente} · {fmtDate(os.dataConclusao||os.data)} · {os.itens.length} peça(s)
                       </div>
                     </div>
                   </div>
