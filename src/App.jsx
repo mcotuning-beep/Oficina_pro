@@ -750,9 +750,7 @@ ${os.observacao?"<div class=\"obs-box\"><b>Observações:</b><br>"+os.observacao
 ${os.incluirOpcoesPagamento?(()=>{
   const opcoes = getOpcoesPagamento();
   if(!opcoes.length) return "";
-  let html = "<div style=\"background:#f0f8ff;border:1px solid #4a90e2;border-radius:6px;padding:8px 10px;margin-top:10px;margin-bottom:4px;font-size:8px;\">
-    <div style=\"font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#2c5aa0;margin-bottom:4px;\">\ud83d\udcb0 OPÇÕES DE PAGAMENTO</div>
-    <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:6px;row-gap:3px;\">";
+  let html = "<div style=\"background:#f0f8ff;border:1px solid #4a90e2;border-radius:6px;padding:8px 10px;margin-top:10px;margin-bottom:4px;font-size:8px;\"><div style=\"font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#2c5aa0;margin-bottom:4px;\">\ud83d\udcb0 OPÇÕES DE PAGAMENTO</div><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:6px;row-gap:3px;\">";
   opcoes.forEach(op => {
     html += "<span><span style=\"color:#333;font-size:7px;font-weight:700;\">✓</span> <span style=\"font-weight:600;\">"+op.nome+"</span></span>";
   });
