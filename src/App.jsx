@@ -1558,7 +1558,8 @@ function TelaOS({ os:ini, onSave, onClose }) {
           <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
         </div>
 
-        <Btn v="ghost" onClick={()=>setOpcoesPagamentoOpen(true)} full style={{marginTop:6}}>💰 Opções de Pagamento</Btn>
+        {/* Botão de Opções de Pagamento - sempre visível */}
+        <button onClick={()=>setOpcoesPagamentoOpen(true)} style={{width:"100%",background:"transparent",border:"1px solid "+T.border,borderRadius:8,color:T.sub,padding:"8px 18px",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:6,fontFamily:"inherit",transition:"opacity .15s"}}>💰 Opções de Pagamento</button>
 
         <BotaoAgenda os={os} />
       </div>
