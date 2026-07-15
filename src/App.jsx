@@ -141,6 +141,7 @@ function Btn({ children, onClick, v="pri", sz="md", disabled, full, style }) {
     green:{background:T.green,color:"#fff"},
     blue:{background:T.blue,color:"#fff"},
     orange:{background:T.orange,color:"#fff"},
+    purple:{background:T.purple,color:"#fff"},
   };
   const col = variants[v] || variants.pri;
   return (
