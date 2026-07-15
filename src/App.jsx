@@ -1556,6 +1556,9 @@ function TelaOS({ os:ini, onSave, onClose }) {
           </label>
           <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
         </div>
+
+        <Btn v="ghost" onClick={()=>setOpcoesPagamentoOpen(true)} full style={{marginTop:6}}>💰 Opções de Pagamento</Btn>
+
         <BotaoAgenda os={os} />
       </div>
 
@@ -1760,19 +1763,12 @@ function TelaOS({ os:ini, onSave, onClose }) {
           </div>
         )}
 
-        {/* Incluir opções de pagamento */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
-          <input type="checkbox" checked={os.incluirOpcoesPagamento||false} onChange={e=>upd("incluirOpcoesPagamento",e.target.checked)}
-            style={{width:16,height:16,cursor:"pointer",accent:T.accent}}/>
-          <span style={{fontSize:12,color:T.muted}}>📋 Incluir opções de pagamento no orçamento</span>
-        </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:os.tipo==="Orçamento"?"1fr 1fr 1fr":"1fr 1fr 1fr 1fr",gap:8}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
         <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>👁 Prévia</Btn>
         {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>💳 Fechar Pgto</Btn>}
-        {os.tipo === "Orçamento" && <Btn v="purple" onClick={()=>setOpcoesPagamentoOpen(true)} full>💰 Op. Pagamento</Btn>}
         <Btn onClick={()=>salvar()} full>💾 Salvar OS</Btn>
       </div>
       {os.numero && (
