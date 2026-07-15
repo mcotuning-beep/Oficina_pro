@@ -1651,6 +1651,21 @@ function TelaOS({ os:ini, onSave, onClose }) {
       <div>
         <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:4}}>Observações</label>
         <textarea value={os.observacao} onChange={e=>upd("observacao",e.target.value)}
+          onKeyDown={e=>{
+            if(e.key==="Enter"&&!e.shiftKey){
+              e.preventDefault();
+              const textarea=e.target;
+              const start=textarea.selectionStart;
+              const end=textarea.selectionEnd;
+              const before=os.observacao.substring(0,start);
+              const after=os.observacao.substring(end);
+              const newVal=before+" / \n"+after;
+              upd("observacao",newVal);
+              setTimeout(()=>{
+                textarea.selectionStart=textarea.selectionEnd=start+4;
+              },0);
+            }
+          }}
           placeholder="Condições do veículo, prazo, próxima revisão..." rows={2}
           style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",colorScheme:"dark"}} />
