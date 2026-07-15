@@ -1977,6 +1977,7 @@ function AbaOrdens({ nivelAcesso }) {
   const [ordens, setOrdens] = useState(()=>db.get(K.ordens));
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Aberta");
+  const [ordenacao, setOrdenacao] = useState("numero");
   const [editandoId, setEditandoId] = useState(null);
   const [nova, setNova] = useState(false);
   const [previaOS, setPreviaOS] = useState(null);
@@ -1998,7 +1999,14 @@ function AbaOrdens({ nivelAcesso }) {
     const mQ = !busca||o.placa?.toLowerCase().includes(q)||o.cliente?.toLowerCase().includes(q)||String(o.numero).includes(q);
     const mS = filtroStatus==="Todas"||o.status===filtroStatus;
     return mQ&&mS;
-  }).sort((a,b)=>(b.numero||0)-(a.numero||0));
+  }).sort((a,b)=>{
+    if(ordenacao==="data_conclusao"){
+      const dataA = new Date(a.dataConclusao||a.data||0).getTime();
+      const dataB = new Date(b.dataConclusao||b.data||0).getTime();
+      return dataB-dataA;
+    }
+    return (b.numero||0)-(a.numero||0);
+  });
 
   if (nova) return (
     <div>
@@ -2035,6 +2043,10 @@ function AbaOrdens({ nivelAcesso }) {
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none"}} />
         <Sel value={filtroStatus} onChange={setFiltroStatus}
           options={["Todas","Orçamento","Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />
+        {(filtroStatus==="Concluída"||filtroStatus==="Todas")&&(
+          <Sel value={ordenacao} onChange={setOrdenacao}
+            options={[{l:"Número da OS",v:"numero"},{l:"Data de Conclusão",v:"data_conclusao"}]} />
+        )}
         <Btn onClick={()=>setNova(true)}>+ Nova OS</Btn>
       </div>
 
