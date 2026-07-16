@@ -247,8 +247,16 @@ function Modal({ title, onClose, children, w=560 }) {
 
 // ── MODAL NOVO PRODUTO ────────────────────────────────────────────────────────
 
-function ModalNovoProduto({ nome, onSave, onClose }) {
-  const [form, setForm] = useState({nome:nome||"",categoria:"",referencia:"",custo:"",margem:"",venda:""});
+function ModalNovoProduto({ produto, nome, onSave, onClose }) {
+  const isEdicao = !!produto;
+  const [form, setForm] = useState({
+    nome:produto?.nome||nome||"",
+    categoria:produto?.categoria||"",
+    referencia:produto?.referencia||"",
+    custo:produto?.custo||"",
+    margem:produto?.margem||"",
+    venda:produto?.venda||""
+  });
   const upd = (k,v) => {
     const u = {...form,[k]:v};
     if (k==="custo"||k==="margem") {
@@ -259,13 +267,19 @@ function ModalNovoProduto({ nome, onSave, onClose }) {
   };
   const salvar = () => {
     if (!form.nome||!form.custo) return;
-    const p = {id:uid(),...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)};
-    db.set(K.produtos,[...db.get(K.produtos),p]);
-    toast("Produto cadastrado!");
-    onSave(p);
+    if (isEdicao) {
+      const lista = db.get(K.produtos).map(p=>p.id===produto.id?{...produto,...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)}:p);
+      db.set(K.produtos, lista);
+      toast("Produto atualizado!");
+    } else {
+      const p = {id:uid(),...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)};
+      db.set(K.produtos,[...db.get(K.produtos),p]);
+      toast("Produto cadastrado!");
+    }
+    onSave();
   };
   return (
-    <Modal title="📦 Novo Produto" onClose={onClose} w={460}>
+    <Modal title={isEdicao?"✏️ Editar Produto":"📦 Novo Produto"} onClose={onClose} w={460}>
       <div style={{display:"grid",gap:12}}>
         <Inp label="Nome do produto *" value={form.nome} onChange={v=>upd("nome",v)} autoFocus />
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -284,7 +298,7 @@ function ModalNovoProduto({ nome, onSave, onClose }) {
         )}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <Btn v="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={salvar} disabled={!form.nome||!form.custo}>Salvar e Lançar na OS</Btn>
+          <Btn onClick={salvar} disabled={!form.nome||!form.custo}>{isEdicao?"Atualizar":"Salvar e Lançar na OS"}</Btn>
         </div>
       </div>
     </Modal>
@@ -2119,6 +2133,7 @@ function AbaProdutos() {
   const [produtos, setProdutos] = useState(()=>db.get(K.produtos));
   const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(false);
+  const [editando, setEditando] = useState(null);
   const reload = () => setProdutos(db.get(K.produtos));
   const excluir = id => { db.set(K.produtos,db.get(K.produtos).filter(p=>p.id!==id)); reload(); toast("Produto excluído."); };
   const filtrados = produtos.filter(p=>{
@@ -2131,7 +2146,7 @@ function AbaProdutos() {
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar produto..."
           style={{flex:1,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none"}} />
-        <Btn onClick={()=>setModal(true)}>+ Novo Produto</Btn>
+        <Btn onClick={()=>{setEditando(null);setModal(true);}}>+ Novo Produto</Btn>
       </div>
       {filtrados.length===0 ? (
         <div style={{textAlign:"center",color:T.muted,padding:60}}>
@@ -2146,12 +2161,15 @@ function AbaProdutos() {
             <span style={{textAlign:"right"}}>Custo</span><span style={{textAlign:"right"}}>Venda</span><span />
           </div>
           {filtrados.map(p => (
-            <Card key={p.id} style={{padding:"10px 14px",marginBottom:6}}>
+            <Card key={p.id} style={{padding:"10px 14px",marginBottom:6,cursor:"pointer",transition:"background 0.2s"}} 
+              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+              onMouseLeave={e=>e.currentTarget.style.background=""}
+              onClick={()=>{setEditando(p);setModal(true);}}>
               <div style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 60px",gap:6,alignItems:"center"}}>
                 <span style={{fontWeight:600,fontSize:13}}>{p.nome}</span>
                 <span style={{textAlign:"right",color:T.muted,fontSize:12}}>{fmtBRL(p.custo)}</span>
                 <span style={{textAlign:"right",fontWeight:700,color:T.green,fontSize:12}}>{fmtBRL(p.venda)}</span>
-                <button onClick={()=>excluir(p.id)}
+                <button onClick={(e)=>{e.stopPropagation();excluir(p.id);}}
                   style={{background:T.redLo,border:"none",borderRadius:5,color:T.red,
                     cursor:"pointer",padding:"4px 8px",fontSize:11}}>🗑️</button>
               </div>
@@ -2159,7 +2177,7 @@ function AbaProdutos() {
           ))}
         </>
       )}
-      {modal && <ModalNovoProduto nome="" onClose={()=>setModal(false)} onSave={()=>{setModal(false);reload();}} />}
+      {modal && <ModalNovoProduto produto={editando} onClose={()=>{setModal(false);setEditando(null);}} onSave={()=>{setModal(false);setEditando(null);reload();}} />}
     </div>
   );
 }
