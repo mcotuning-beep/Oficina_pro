@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M.Scarpel — Catálogo de Películas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #101418;
+    --bg-card: #171c22;
+    --bg-card-hover: #1d232a;
+    --line: #2a3138;
+    --amber: #e8a33d;
+    --amber-dim: #8a6a30;
+    --teal: #4fb7ab;
+    --text: #ecebe7;
+    --text-dim: #9aa3ab;
+    --text-faint: #656d74;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .noise{
+    position: fixed; inset: 0; pointer-events: none; opacity: .035; z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  header{
+    padding: 44px 24px 28px;
+    text-align: center;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+
+  .eyebrow{
+    font-family:'Oswald', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 12px;
+  }
+
+  h1{
+    font-family:'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: clamp(28px, 6vw, 44px);
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+  }
+
+  header p{
+    color: var(--text-dim);
+    font-size: 15px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  main{
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+  }
+
+  .section-label{
+    font-family:'Oswald', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after{
+    content:'';
+    flex:1;
+    height:1px;
+    background: var(--line);
+  }
+
+  /* info accordions */
+  .info-stack{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 40px;
+  }
+  .info-item{
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .info-toggle{
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text);
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    text-align: left;
+    gap: 12px;
+  }
+  .info-toggle .icon{
+    color: var(--amber);
+    font-family: 'Oswald', sans-serif;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .info-toggle .chevron{
+    color: var(--text-faint);
+    transition: transform .2s ease;
+    flex-shrink: 0;
+  }
+  .info-item.open .chevron{ transform: rotate(180deg); }
+  .info-body{
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .25s ease;
+  }
+  .info-item.open .info-body{ max-height: 600px; }
+  .info-body-inner{
+    padding: 0 18px 18px;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .info-body-inner strong{ color: var(--text); }
+  .vlt-scale{
+    display:flex;
+    gap:6px;
+    margin: 12px 0 14px;
+    flex-wrap: wrap;
+  }
+  .vlt-chip{
+    font-family:'Oswald', sans-serif;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 9px;
+    color: var(--text-dim);
+  }
+  .vlt-chip b{ color: var(--amber); }
+  .law-fine{
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(232,163,61,0.08);
+    border: 1px solid var(--amber-dim);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .card{
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px;
+    cursor: pointer;
+    transition: border-color .18s ease, transform .18s ease, background .18s ease;
+    position: relative;
+  }
+  .card:hover{
+    background: var(--bg-card-hover);
+    border-color: var(--amber-dim);
+    transform: translateY(-2px);
+  }
+  .card:focus-visible{
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+
+  .card-top{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    gap: 10px;
+  }
+
+  .card h3{
+    font-family:'Oswald', sans-serif;
+    font-size: 19px;
+    font-weight: 600;
+  }
+
+  .warranty-tag{
+    font-family:'Oswald', sans-serif;
+    font-size: 11.5px;
+    color: var(--teal);
+    border: 1px solid rgba(79,183,171,0.35);
+    background: rgba(79,183,171,0.08);
+    border-radius: 20px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+
+  .card p.desc{
+    color: var(--text-dim);
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+
+  .card-foot{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+
+  .price-hint{
+    font-family:'Oswald', sans-serif;
+    color: var(--amber);
+    font-size: 13px;
+  }
+
+  .removal-note{
+    margin-top: 22px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text-faint);
+    padding: 12px;
+    border-top: 1px dashed var(--line);
+  }
+
+  /* modal */
+  .overlay{
+    position: fixed; inset:0;
+    background: rgba(6,8,10,0.72);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .overlay.open{ opacity: 1; pointer-events: all; }
+
+  @media (min-width: 640px){
+    .overlay{ align-items: center; }
+  }
+
+  .modal{
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-top: 1px solid var(--amber-dim);
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    padding: 28px 26px 32px;
+    transform: translateY(24px);
+    transition: transform .25s ease;
+  }
+  .overlay.open .modal{ transform: translateY(0); }
+
+  @media (min-width: 640px){
+    .modal{ border-radius: 14px; border-top: 1px solid var(--line); }
+  }
+
+  .modal-head{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    gap: 12px;
+  }
+
+  .modal h2{
+    font-family:'Oswald', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .close-btn{
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .close-btn:hover{ color: var(--text); border-color: var(--text-faint); }
+
+  .modal .warranty-tag{ margin-bottom: 18px; display:inline-block; }
+
+  .modal-section-title{
+    font-family:'Oswald', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 18px 0 8px;
+  }
+
+  .modal p.body-text{
+    color: var(--text-dim);
+    font-size: 14.5px;
+    line-height: 1.6;
+  }
+
+  .feature-list{
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .feature-list li{
+    font-size: 12.5px;
+    color: var(--teal);
+    border: 1px solid rgba(79,183,171,0.3);
+    background: rgba(79,183,171,0.08);
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+
+  .price-table{
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+  }
+  .price-table td{
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .price-table td:last-child{
+    text-align: right;
+    font-family:'Oswald', sans-serif;
+    color: var(--amber);
+    font-weight: 600;
+  }
+  .price-table tr:last-child td{ border-bottom: none; }
+
+  .modal-cta{
+    margin-top: 22px;
+    display:flex;
+    gap:10px;
+  }
+  .whats-btn{
+    flex:1;
+    background: var(--amber);
+    color: #14100a;
+    border: none;
+    padding: 13px 16px;
+    border-radius: 8px;
+    font-family:'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    display: block;
+  }
+  .whats-btn:hover{ background: #f0b558; }
+
+  footer{
+    text-align: center;
+    padding: 30px 20px 50px;
+    color: var(--text-faint);
+    font-size: 12.5px;
+    border-top: 1px solid var(--line);
+  }
+  footer strong{ color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="noise"></div>
+
+<header>
+  <div class="eyebrow">M.Scarpel Serviços Automotivos</div>
+  <h1>Escolha sua película</h1>
+  <p>Toque em uma linha para ver descrição completa, garantia e valores.</p>
+</header>
+
+<main>
+
+  <div class="info-stack" id="infoStack">
+    <div class="info-item" data-item>
+      <button class="info-toggle" data-toggle>
+        <span><span class="icon">G5, G20...</span> &nbsp;O que significam esses números?</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="info-body">
+        <div class="info-body-inner">
+          Você já deve ter visto películas anunciadas como <strong>G5, G20, G35</strong> ou <strong>G50</strong>. Esse número indica o <strong>VLT</strong> (percentual de luz que passa pelo vidro): quanto menor o número, mais escura é a película.
+          <div class="vlt-scale">
+            <span class="vlt-chip"><b>G5</b> · bem escura</span>
+            <span class="vlt-chip"><b>G20</b> · escura</span>
+            <span class="vlt-chip"><b>G35</b> · intermediária</span>
+            <span class="vlt-chip"><b>G50</b> · clara</span>
+          </div>
+          Nas nossas linhas abaixo, cuidamos de indicar o nível ideal pra cada vidro do seu carro dentro do que a lei permite — você não precisa decorar esses códigos, é só escolher a linha.
+        </div>
+      </div>
+    </div>
+
+    <div class="info-item" data-item>
+      <button class="info-toggle" data-toggle>
+        <span><span class="icon">⚖</span> &nbsp;O que diz a lei sobre película escura</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="info-body">
+        <div class="info-body-inner">
+          Pela <strong>Resolução CONTRAN 989/2022</strong>, o para-brisa e os vidros laterais dianteiros precisam manter, no mínimo, <strong>70% de transparência</strong> (vidro + película somados). Já os vidros traseiros e o vigia podem ser bem mais escuros, sem percentual mínimo, desde que o carro tenha retrovisores externos nos dois lados. Películas espelhadas ou refletivas são proibidas em qualquer vidro.
+          <div class="law-fine">
+            Fora dessas regras, a multa é de <strong>R$ 195,23</strong>, é considerada infração grave, soma <strong>5 pontos na CNH</strong> e o carro pode ficar retido até regularizar. Por isso sempre indicamos a linha e o vidro certo pra cada aplicação.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Nossas linhas</div>
+  <div class="grid" id="grid"></div>
+
+  <div class="removal-note">
+    Se o carro já tem película instalada, cobramos <strong style="color:var(--text-dim)">R$ 100,00</strong> pela remoção do material antigo e limpeza profunda dos vidros antes da nova aplicação.
+  </div>
+</main>
+
+<footer>
+  Dúvidas? Fale com <strong>M.Scarpel Serviços Automotivos</strong> pelo WhatsApp.
+</footer>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+const films = [
+  {
+    id: 'profissional',
+    name: 'Linha Profissional',
+    warranty: '3 anos de garantia',
+    tagline: 'O ponto de partida com acabamento impecável',
+    desc: 'A porta de entrada pra quem quer mais privacidade sem abrir mão de um acabamento bonito. Aplicação bem-feita, uniforme e sem bolhas, pensada pra durar com qualidade no dia a dia.',
+    features: ['Privacidade', 'Acabamento estético'],
+    prices: [
+      { label: 'Laterais e traseiro', value: 'R$ 360,00' },
+      { label: 'Para-brisa', value: 'R$ 120,00' },
+    ]
+  },
+  {
+    id: 'nano-carbono',
+    name: 'Linha Nano Carbono',
+    warranty: '7 anos de garantia',
+    tagline: 'Mais conforto térmico e durabilidade real',
+    desc: 'Um passo acima da linha Profissional: a tecnologia em carbono entrega uma rejeição de calor superior, então o carro esquenta bem menos no sol. E o principal — ela não desbota nem fica arroxeada com o tempo, mantendo o visual por muito mais tempo.',
+    features: ['Não desbota', 'Maior rejeição de calor', 'Alta durabilidade'],
+    prices: [
+      { label: 'Laterais e traseiro', value: 'R$ 450,00' },
+      { label: 'Para-brisa', value: 'R$ 250,00' },
+    ]
+  },
+  {
+    id: 'nano-ceramica',
+    name: 'Linha Nano Cerâmica',
+    warranty: '10 anos de garantia',
+    tagline: 'O topo de linha em tecnologia e conforto',
+    desc: 'A nossa linha mais avançada. É campeã em rejeição de calor — o interior do carro esquenta muito menos, mesmo em dias quentes. Mantém uma ótima visibilidade por dentro, mesmo sendo escura por fora, e tem a maior durabilidade do mercado. Para quem quer o melhor sem abrir mão de nada.',
+    features: ['Máxima rejeição de calor', 'Visibilidade interna preservada', 'Maior durabilidade do mercado'],
+    prices: [
+      { label: 'Laterais e traseiro', value: 'R$ 650,00' },
+      { label: 'Para-brisa', value: 'R$ 350,00' },
+    ]
+  },
+  {
+    id: 'ps8',
+    name: 'Película Antivandalismo PS8',
+    warranty: '5 anos de garantia',
+    tagline: 'Segurança em primeiro lugar',
+    desc: 'Não é sobre estética — é sobre proteção. Essa película ultra resistente aumenta a espessura efetiva do vidro, dificultando bastante que ele quebre ou estilhace em caso de impacto ou tentativa de furto. Uma camada a mais de segurança pro seu carro e pra quem está dentro dele.',
+    features: ['Alta resistência a impacto', 'Dificulta arrombamento', 'Reduz estilhaçamento'],
+    prices: [
+      { label: 'Aplicação completa', value: 'R$ 1.300,00' },
+    ]
+  },
+];
+
+const grid = document.getElementById('grid');
+const overlay = document.getElementById('overlay');
+const modal = document.getElementById('modal');
+
+function render(){
+  grid.innerHTML = films.map(f => `
+    <div class="card" tabindex="0" data-id="${f.id}" role="button" aria-label="Ver detalhes de ${f.name}">
+      <div class="card-top">
+        <h3>${f.name}</h3>
+        <span class="warranty-tag">${f.warranty}</span>
+      </div>
+      <p class="desc">${f.tagline}</p>
+      <div class="card-foot">
+        <span>${f.prices.length > 1 ? f.prices.length + ' opções de valor' : 'Valor único'}</span>
+        <span class="price-hint">a partir de ${f.prices[0].value}</span>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', () => openModal(card.dataset.id));
+    card.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openModal(card.dataset.id); }
+    });
+  });
+}
+
+const WHATSAPP_NUMBER = '5511939228558';
+
+function waLink(filmName){
+  const msg = encodeURIComponent(`Olá! Vi o catálogo de películas e quero agendar a ${filmName}.`);
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`;
+}
+
+function openModal(id){
+  const f = films.find(x => x.id === id);
+  if(!f) return;
+
+  modal.innerHTML = `
+    <div class="modal-head">
+      <h2>${f.name}</h2>
+      <button class="close-btn" aria-label="Fechar">✕</button>
+    </div>
+    <span class="warranty-tag">${f.warranty}</span>
+
+    <div class="modal-section-title">Sobre a película</div>
+    <p class="body-text">${f.desc}</p>
+
+    <div class="modal-section-title">Benefícios</div>
+    <ul class="feature-list">
+      ${f.features.map(ft => `<li>${ft}</li>`).join('')}
+    </ul>
+
+    <div class="modal-section-title">Valores</div>
+    <table class="price-table">
+      ${f.prices.map(p => `<tr><td>${p.label}</td><td>${p.value}</td></tr>`).join('')}
+    </table>
+
+    <div class="modal-cta">
+      <a class="whats-btn" href="${waLink(f.name)}" target="_blank" rel="noopener">Agendar pelo WhatsApp</a>
+    </div>
+  `;
+
+  modal.querySelector('.close-btn').addEventListener('click', closeModal);
+  overlay.classList.add('open');
+}
+
+function closeModal(){
+  overlay.classList.remove('open');
+}
+
+overlay.addEventListener('click', e => {
+  if(e.target === overlay) closeModal();
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') closeModal();
+});
+
+document.querySelectorAll('[data-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    btn.closest('[data-item]').classList.toggle('open');
+  });
+});
+
+render();
+</script>
+</body>
+</html>
