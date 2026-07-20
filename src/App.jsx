@@ -2174,8 +2174,11 @@ function AbaOrdens({ nivelAcesso }) {
         <div style={{display:"grid",gap:8}}>
           {filtradas.map(os => {
             const total = calcTotal(os);
+            const totalPago = calcTotalPago(os);
+            const saldoPendente = calcSaldoOS(os);
+            const temAdiantamento = os.status !== "Concluída" && totalPago > 0 && saldoPendente > 0.009;
             return (
-              <Card key={os.id} onClick={()=>setEditandoId(os.id)}>
+              <Card key={os.id} onClick={()=>setEditandoId(os.id)} style={temAdiantamento?{borderColor:T.accent,boxShadow:"0 0 0 1px "+T.accentLo}:undefined}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:6}}>
                   <div style={{display:"flex",gap:10,alignItems:"flex-start",flex:1,minWidth:0}}>
                     <span style={{fontWeight:900,color:T.accent,fontSize:15,minWidth:44,flexShrink:0}}>#{String(os.numero).padStart(4,"0")}</span>
@@ -2184,10 +2187,17 @@ function AbaOrdens({ nivelAcesso }) {
                         <span style={{fontWeight:700}}>{os.placa}</span>
                         <span style={{color:T.sub,fontSize:12}}>{os.veiculo} {os.ano}</span>
                         {os.tipo==="Orçamento"&&<Badge color={T.purple}>Orçamento</Badge>}
+                        {temAdiantamento&&<Badge color={T.accent}>💰 Falta {fmtBRL(saldoPendente)}</Badge>}
                       </div>
                       <div style={{fontSize:11,color:T.muted}}>
                         {os.cliente} · {fmtDate(os.dataConclusao||os.data)} · {os.itens.length} peça(s)
                       </div>
+                      {temAdiantamento&&(
+                        <div style={{marginTop:6,display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap",background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:8,padding:"5px 8px",fontSize:11,fontWeight:800,color:T.accent}}>
+                          <span>💳 Adiantou {fmtBRL(totalPago)}</span>
+                          <span style={{color:T.red}}>Falta {fmtBRL(saldoPendente)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
