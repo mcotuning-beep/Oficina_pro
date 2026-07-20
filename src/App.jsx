@@ -2187,26 +2187,27 @@ function AbaOrdens({ nivelAcesso }) {
                         <span style={{fontWeight:700}}>{os.placa}</span>
                         <span style={{color:T.sub,fontSize:12}}>{os.veiculo} {os.ano}</span>
                         {os.tipo==="Orçamento"&&<Badge color={T.purple}>Orçamento</Badge>}
-                        {temAdiantamento&&<Badge color={T.accent}>💰 Falta {fmtBRL(saldoPendente)}</Badge>}
                       </div>
                       <div style={{fontSize:11,color:T.muted}}>
                         {os.cliente} · {fmtDate(os.dataConclusao||os.data)} · {os.itens.length} peça(s)
                       </div>
-                      {temAdiantamento&&(
-                        <div style={{marginTop:6,display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap",background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:8,padding:"5px 8px",fontSize:11,fontWeight:800,color:T.accent}}>
-                          <span>💳 Adiantou {fmtBRL(totalPago)}</span>
-                          <span style={{color:T.red}}>Falta {fmtBRL(saldoPendente)}</span>
-                        </div>
-                      )}
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <Badge color={STATUS_COLOR[os.status]||T.muted}>{os.status}</Badge>
-                    {os.pagamentos?.length>0 && <Badge color={T.green}>💳</Badge>}
-                    {nivelAcesso==="admin" && <span style={{fontWeight:800,color:T.green,fontSize:13}}>{fmtBRL(total)}</span>}
-                    <button onClick={e=>{e.stopPropagation();setPreviaOS(os);}}
-                      style={{background:T.blueLo,border:"none",borderRadius:6,color:T.blue,
-                        cursor:"pointer",padding:"5px 8px",fontSize:12,fontWeight:600}}>🖨️</button>
+                  <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"flex-end",justifyContent:"flex-start",flexShrink:0}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <Badge color={STATUS_COLOR[os.status]||T.muted}>{os.status}</Badge>
+                      {os.pagamentos?.length>0 && <Badge color={T.green}>💳</Badge>}
+                      {nivelAcesso==="admin" && <span style={{fontWeight:800,color:T.green,fontSize:13}}>{fmtBRL(total)}</span>}
+                      <button onClick={e=>{e.stopPropagation();setPreviaOS(os);}}
+                        style={{background:T.blueLo,border:"none",borderRadius:6,color:T.blue,
+                          cursor:"pointer",padding:"5px 8px",fontSize:12,fontWeight:600}}>🖨️</button>
+                    </div>
+                    {temAdiantamento&&(
+                      <div style={{display:"grid",gap:2,background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:8,padding:"5px 8px",fontSize:10,fontWeight:800,textAlign:"right",lineHeight:1.15,minWidth:118}}>
+                        <span style={{color:T.accent}}>💳 Deu {fmtBRL(totalPago)}</span>
+                        <span style={{color:T.red}}>Falta {fmtBRL(saldoPendente)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
