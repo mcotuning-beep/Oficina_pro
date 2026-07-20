@@ -25,6 +25,13 @@ const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*(p
 const calcCustoPecas = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.custo||0)*(parseFloat(i.qty||1)||1),0);
 const calcTotalPago = os => (os?.pagamentos||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0);
 const calcSaldoOS = os => Math.max(0, (calcTotal(os)-Number(os?.desconto||0))-calcTotalPago(os));
+const getDataPagamento = (p, os) => String(p?.registradoEm || p?.data || os?.fechadoEm || os?.dataConclusao || os?.data || "").slice(0,10);
+const calcRecebimentosOS = os => {
+  const pagamentos = os?.pagamentos || [];
+  if (pagamentos.length) return pagamentos.map(p => ({data:getDataPagamento(p, os), valor:parseFloat(p.valor||0), os}));
+  if (os?.status === "Concluída") return [{data:dataRelatorio(os), valor:Math.max(0, calcTotal(os)-Number(os?.desconto||0)), os}];
+  return [];
+};
 const calcResultadoOS = os => {
   const bruto = Number(os?.totalBruto ?? calcTotal(os));
   const desconto = Number(os?.desconto || 0);
@@ -2605,7 +2612,13 @@ function AbaAnalise(){
       return d.getMonth() === periodo.m && d.getFullYear() === periodo.a;
     });
     const comValor = doMes.filter(o => calcTotal(o) > 0 && o.status === "Concluída");
-    const totalFat = comValor.reduce((s,o) => s + calcTotal(o), 0);
+    const recebimentosMes = todas.flatMap(o=>calcRecebimentosOS(o)).filter(r=>{
+      if(!r.data) return false;
+      const d = new Date(r.data + "T12:00:00");
+      return d.getMonth() === periodo.m && d.getFullYear() === periodo.a;
+    });
+    const totalRecebido = recebimentosMes.reduce((s,r)=>s+Number(r.valor||0),0);
+    const totalFat = totalRecebido;
     const totalTaxas = comValor.reduce((s,o) => s + Number(o.totalTaxas||0), 0);
     const totalDescontos = comValor.reduce((s,o) => s + Number(o.desconto||0), 0);
     const totalCustoPecas = comValor.reduce((s,o) => s + calcResultadoOS(o).custoPecas, 0);
@@ -2615,14 +2628,13 @@ function AbaAnalise(){
     const lucroMedio = comValor.length > 0 ? lucroReal / comValor.length : 0;
     const metaNum = Number(metaDiaria||0);
     const inicioHoje = today();
-    const osHoje = comValor.filter(o => dataRelatorio(o) === inicioHoje);
-    const lucroHoje = osHoje.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
+    const recebidoHoje = recebimentosMes.filter(r => r.data === inicioHoje).reduce((s,r)=>s+Number(r.valor||0),0);
     const fimPeriodo = (periodo.m === hoje.getMonth() && periodo.a === hoje.getFullYear()) ? inicioHoje : `${periodo.a}-${String(periodo.m+1).padStart(2,"0")}-${String(new Date(periodo.a, periodo.m+1, 0).getDate()).padStart(2,"0")}`;
     const diasMeta = diasMetaAte(periodo.a, periodo.m, fimPeriodo, comValor);
     const metaAcumulada = metaNum * diasMeta;
-    const saldoMeta = lucroReal - metaAcumulada;
-    const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroReal/metaAcumulada)*100) : 0;
-    const faltaMeta = Math.max(0, metaAcumulada - lucroReal);
+    const saldoMeta = totalRecebido - metaAcumulada;
+    const percMeta = metaAcumulada > 0 ? Math.min(999, (totalRecebido/metaAcumulada)*100) : 0;
+    const faltaMeta = Math.max(0, metaAcumulada - totalRecebido);
 
     const mapa = {};
     comValor.forEach(o => {
@@ -2663,7 +2675,7 @@ function AbaAnalise(){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
           {[
             {l:"OS",v:comValor.length,c:T.green,big:true},
-            {l:"Faturado",v:fmtR(totalFat),c:T.accent},
+            {l:"Recebido",v:fmtR(totalFat),c:T.accent},
             {l:"Lucro Médio/OS",v:fmtR(lucroMedio),c:T.blue},
           ].map(x=>(
             <div key={x.l} style={{background:T.card,border:"1px solid "+T.border,
@@ -2701,8 +2713,8 @@ function AbaAnalise(){
         <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
             <div>
-              <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta acumulada de lucro</div>
-              <div style={{fontSize:10,color:T.muted}}>Segunda a sexta. Sábado/domingo/feriado só entra se você confirmar no fechamento.</div>
+              <div style={{fontSize:11,color:T.blue,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Meta acumulada de recebimento</div>
+              <div style={{fontSize:10,color:T.muted}}>Conta pelo dinheiro que entrou: adiantamento ou pagamento final, sem duplicar na conclusão da O.S.</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -2724,11 +2736,11 @@ function AbaAnalise(){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:8}}>
             <div><div style={{fontSize:9,color:T.muted}}>Dias úteis contabilizados</div><b style={{color:T.text}}>{metaNum>0?diasMeta:"—"}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>Meta acumulada</div><b style={{color:T.blue}}>{metaNum>0?fmtR(metaAcumulada):"—"}</b></div>
-            <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaAcumulada>0&&lucroReal>=metaAcumulada?T.green:T.accent}}>{metaAcumulada>0?percMeta.toFixed(0)+"%":"—"}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Atingido</div><b style={{color:metaAcumulada>0&&totalRecebido>=metaAcumulada?T.green:T.accent}}>{metaAcumulada>0?percMeta.toFixed(0)+"%":"—"}</b></div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
-            <div><div style={{fontSize:9,color:T.muted}}>Lucro hoje</div><b style={{color:lucroHoje>=0?T.green:T.red}}>{fmtR(lucroHoje)}</b></div>
-            <div><div style={{fontSize:9,color:T.muted}}>Lucro acumulado</div><b style={{color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Recebido hoje</div><b style={{color:recebidoHoje>=0?T.green:T.red}}>{fmtR(recebidoHoje)}</b></div>
+            <div><div style={{fontSize:9,color:T.muted}}>Recebido acumulado</div><b style={{color:totalRecebido>=0?T.green:T.red}}>{fmtR(totalRecebido)}</b></div>
             <div><div style={{fontSize:9,color:T.muted}}>{saldoMeta>=0?"Acima":"Falta"}</div><b style={{color:saldoMeta>=0?T.green:T.accent}}>{metaNum>0?fmtR(Math.abs(saldoMeta)):"—"}</b></div>
           </div>
         </div>
