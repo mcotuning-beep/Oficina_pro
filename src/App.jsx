@@ -23,6 +23,8 @@ const today = () => {
 const dataRelatorio = o => (o?.status === "Concluída" ? (o.dataConclusao || o.data) : o?.data) || "";
 const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*(parseFloat(i.qty||1)||1),0)+parseFloat(os.maoDeObra||0);
 const calcCustoPecas = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.custo||0)*(parseFloat(i.qty||1)||1),0);
+const calcTotalPago = os => (os?.pagamentos||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0);
+const calcSaldoOS = os => Math.max(0, (calcTotal(os)-Number(os?.desconto||0))-calcTotalPago(os));
 const calcResultadoOS = os => {
   const bruto = Number(os?.totalBruto ?? calcTotal(os));
   const desconto = Number(os?.desconto || 0);
@@ -319,11 +321,14 @@ function ModalPagamento({ os, onSave, onClose }) {
   const totalComDesconto = total - parseFloat(desconto||0);
   const soma = pagamentos.reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const restante = totalComDesconto - soma;
+  const temPagamento = soma > 0;
+  const pagamentoParcial = temPagamento && restante > 0.009;
+  const pagamentoCompleto = temPagamento && Math.abs(restante)<0.01;
 
   const updP = (id,k,v) => setPagamentos(ps=>ps.map(p=>p.id===id?{...p,[k]:v}:p));
   const delP = (id) => setPagamentos(ps=>ps.filter(p=>p.id!==id));
   const addP = () => {
-    const r = Math.max(0,total-pagamentos.reduce((s,p)=>s+parseFloat(p.valor||0),0));
+    const r = Math.max(0,totalComDesconto-pagamentos.reduce((s,p)=>s+parseFloat(p.valor||0),0));
     setPagamentos(ps=>[...ps,{...mkPgto(),valor:r>0?r.toFixed(2):""}]);
   };
 
@@ -347,7 +352,7 @@ function ModalPagamento({ os, onSave, onClose }) {
     const margemReal = (lucroReal / Math.max(0.01, totalComDesconto)) * 100;
     const novaOS = {
       ...os,
-      pagamentos,
+      pagamentos: pagamentos.map(p=>({...p, registradoEm:p.registradoEm||new Date().toISOString()})),
       status:"Concluída",
       totalBruto:total,
       totalLiquido:totalLiq,
@@ -357,6 +362,8 @@ function ModalPagamento({ os, onSave, onClose }) {
       outrosCustos:outros,
       lucroReal,
       margemReal,
+      pagamentoParcial:false,
+      saldoPendente:0,
       dataConclusao:hojeStr,
       fechadoEm:new Date().toISOString(),
       contabilizarDiaMeta
@@ -367,8 +374,28 @@ function ModalPagamento({ os, onSave, onClose }) {
     onSave(novaOS);
   };
 
+  const salvarAdiantamento = () => {
+    const novaOS = {
+      ...os,
+      pagamentos: pagamentos.map(p=>({...p, registradoEm:p.registradoEm||new Date().toISOString()})),
+      totalBruto:total,
+      totalLiquido:totalLiq,
+      totalTaxas,
+      desconto:parseFloat(desconto||0),
+      custoPecas,
+      outrosCustos:parseFloat(outrosCustos||0),
+      pagamentoParcial:true,
+      saldoPendente:Math.max(0, restante),
+      ultimoAdiantamentoEm:new Date().toISOString()
+    };
+    const ordens = db.get(K.ordens);
+    db.set(K.ordens,[...ordens.filter(o=>o.id!==novaOS.id),novaOS]);
+    toast("Adiantamento registrado! OS continua aberta.");
+    onSave(novaOS);
+  };
+
   return (
-    <Modal title="💳 Fechar Pagamento" onClose={onClose} w={620}>
+    <Modal title="💳 Pagamentos da OS" onClose={onClose} w={620}>
       <div style={{display:"grid",gap:16}}>
         <div style={{background:T.bg,borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,textAlign:"center",marginBottom:8}}>
           <div>
@@ -428,6 +455,11 @@ function ModalPagamento({ os, onSave, onClose }) {
             );
           })}
           <Btn v="ghost" onClick={addP} style={{width:"100%",marginTop:4}}>+ Adicionar outra forma de pagamento</Btn>
+          {pagamentoParcial && (
+            <div style={{fontSize:12,color:T.accent,marginTop:8,textAlign:"center",fontWeight:700}}>
+              Adiantamento de {fmtBRL(soma)} registrado/agendado. Saldo pendente: {fmtBRL(restante)}.
+            </div>
+          )}
         </div>
 
         {soma>0 && (
@@ -495,13 +527,24 @@ function ModalPagamento({ os, onSave, onClose }) {
           </div>
         </div>
 
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
           <Btn v="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn v="green" onClick={salvar} disabled={!ok}>✅ Salvar e Concluir OS</Btn>
+          <Btn v="orange" onClick={salvarAdiantamento} disabled={!pagamentoParcial}>💰 Salvar Adiantamento</Btn>
+          <Btn v="green" onClick={salvar} disabled={!pagamentoCompleto}>✅ Salvar e Concluir OS</Btn>
         </div>
-        {!ok && soma>0 && (
+        {restante < -0.009 && (
+          <div style={{fontSize:11,color:T.red,textAlign:"center",fontWeight:700}}>
+            O valor informado passou do total da OS. Ajuste antes de salvar.
+          </div>
+        )}
+        {pagamentoParcial && (
           <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>
-            Distribua o total ({fmtBRL(total)}) entre as formas de pagamento para confirmar.
+            Como ainda faltam {fmtBRL(restante)}, use “Salvar Adiantamento” para manter a OS aberta.
+          </div>
+        )}
+        {!temPagamento && (
+          <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>
+            Informe um valor para registrar adiantamento ou distribua o total para concluir a OS.
           </div>
         )}
       </div>
@@ -1695,9 +1738,13 @@ function TelaOS({ os:ini, onSave, onClose }) {
         </div>
       </div>
 
-      {os.pagamentos?.length>0 && (
-        <div style={{background:T.greenLo,border:"1px solid "+T.green+"33",borderRadius:10,padding:14}}>
-          <div style={{fontSize:11,color:T.green,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8}}>✅ Pagamento Registrado</div>
+      {os.pagamentos?.length>0 && (()=>{
+        const pago = calcTotalPago(os);
+        const saldo = calcSaldoOS(os);
+        const parcial = os.status !== "Concluída" && saldo > 0.009;
+        return (
+        <div style={{background:parcial?T.accentLo:T.greenLo,border:"1px solid "+(parcial?T.accent:T.green)+"33",borderRadius:10,padding:14}}>
+          <div style={{fontSize:11,color:parcial?T.accent:T.green,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8}}>{parcial?"💰 Adiantamento Registrado":"✅ Pagamento Registrado"}</div>
           {os.pagamentos.map((p,i) => {
             const taxa = getTaxas().find(t=>t.id===p.taxaId);
             const liq = parseFloat(p.valor||0)*(1-(taxa?.taxa||0)/100);
@@ -1711,11 +1758,14 @@ function TelaOS({ os:ini, onSave, onClose }) {
             );
           })}
           <div style={{marginTop:8,fontSize:13,fontWeight:700}}>
-            Líquido total: <span style={{color:T.green}}>{fmtBRL(os.totalLiquido)}</span>
+            Pago: <span style={{color:parcial?T.accent:T.green}}>{fmtBRL(pago)}</span>
+            {parcial && <span style={{color:T.muted,fontWeight:400}}> · Falta: <b style={{color:T.red}}>{fmtBRL(saldo)}</b></span>}
+            <br/>Líquido total: <span style={{color:T.green}}>{fmtBRL(os.totalLiquido)}</span>
             {os.totalTaxas>0 && <span style={{color:T.muted,fontWeight:400}}> (taxa: -{fmtBRL(os.totalTaxas)})</span>}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <div style={{background:T.surface,border:"1px solid "+T.green+"44",borderRadius:12,padding:14,display:"grid",gap:10}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
@@ -1789,7 +1839,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
         <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>👁 Prévia</Btn>
-        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>💳 Fechar Pgto</Btn>}
+        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>{calcSaldoOS(os)>0.009&&os.pagamentos?.length?"💰 Pgto/Saldo":"💳 Fechar Pgto"}</Btn>}
         <Btn onClick={()=>salvar()} full>💾 Salvar OS</Btn>
       </div>
       {os.numero && (
