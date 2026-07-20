@@ -2159,10 +2159,10 @@ function AbaOrdens({ nivelAcesso }) {
         <div style={{background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:10,
           padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:T.accent,fontWeight:700}}>
-            💰 {filtradas.length} OS em aberto
+            💰 {filtradas.length} OS em aberto · saldo a receber
           </span>
           <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
-            {fmtBRL(filtradas.reduce((s,o)=>s+calcTotal(o),0))}
+            {fmtBRL(filtradas.reduce((s,o)=>s+calcSaldoOS(o),0))}
           </span>
         </div>
       )}
