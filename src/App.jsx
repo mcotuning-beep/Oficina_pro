@@ -301,16 +301,18 @@ function ModalNovoProduto({ produto, nome, onSave, onClose }) {
   };
   const salvar = () => {
     if (!form.nome||!form.custo) return;
+    let salvo = null;
     if (isEdicao) {
-      const lista = db.get(K.produtos).map(p=>p.id===produto.id?{...produto,...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)}:p);
+      salvo = {...produto,...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)};
+      const lista = db.get(K.produtos).map(p=>p.id===produto.id?salvo:p);
       db.set(K.produtos, lista);
       toast("Produto atualizado!");
     } else {
-      const p = {id:uid(),...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)};
-      db.set(K.produtos,[...db.get(K.produtos),p]);
+      salvo = {id:uid(),...form,custo:parseFloat(form.custo),venda:parseFloat(form.venda||form.custo)};
+      db.set(K.produtos,[...db.get(K.produtos),salvo]);
       toast("Produto cadastrado!");
     }
-    onSave();
+    onSave&&onSave(salvo);
   };
   return (
     <Modal title={isEdicao?"✏️ Editar Produto":"📦 Novo Produto"} onClose={onClose} w={460}>
