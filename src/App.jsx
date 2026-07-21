@@ -1483,7 +1483,6 @@ function TelaOS({ os:ini, onSave, onClose }) {
 
   const salvarLocal = (osFinal) => {
     const f = osFinal||os;
-    if (!f.placa) return null;
     if (f.cliente) {
       const clis = db.get(K.clientes);
       const idxCli = clis.findIndex(c=>c.nome?.toLowerCase()===f.cliente.toLowerCase());
@@ -1496,7 +1495,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
       }
     }
     const veis = db.get(K.veiculos);
-    if (!veis.find(v=>v.placa===f.placa)) {
+    if (f.placa && !veis.find(v=>v.placa===f.placa)) {
       const cli = db.get(K.clientes).find(c=>c.nome?.toLowerCase()===f.cliente?.toLowerCase());
       db.set(K.veiculos,[...veis,{id:uid(),placa:f.placa,modelo:f.veiculo||"",ano:f.ano,clienteId:cli?.id}]);
     }
@@ -1537,7 +1536,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   return (
     <div style={{display:"grid",gap:14}}>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
-        <Inp label="Placa *" value={os.placa} onChange={onPlaca} placeholder="ABC1D23" />
+        <Inp label="Placa" value={os.placa} onChange={onPlaca} placeholder="ABC1D23" />
         <div style={{display:"grid",gridTemplateColumns:"1fr 80px 50px",gap:8}}>
           <Inp label="Veículo (Marca/Modelo)" value={os.veiculo} onChange={v=>upd("veiculo",v)} placeholder="Fiat Uno" />
           <Inp label="Ano" value={os.ano} onChange={v=>upd("ano",v)} placeholder="2018" />
