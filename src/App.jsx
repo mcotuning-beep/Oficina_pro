@@ -682,13 +682,19 @@ function ModalImpressao({ os, onClose }) {
   }).join("");
 
   const garantiaMeses = parseInt(os.garantiaMeses || 0);
-  const garantiaTexto = garantiaMeses > 0
-    ? (garantiaMeses + " " + (garantiaMeses === 1 ? "mês" : "meses"))
+  const garantiaAnos = parseInt(os.garantiaAnos || 0);
+  const garantiaTipo = garantiaMeses > 0 ? "meses" : (garantiaAnos > 0 ? "anos" : "");
+  const garantiaValor = garantiaTipo === "meses" ? garantiaMeses : garantiaAnos;
+  const garantiaTexto = garantiaValor > 0
+    ? (garantiaValor + " " + (garantiaTipo === "meses"
+      ? (garantiaValor === 1 ? "mês" : "meses")
+      : (garantiaValor === 1 ? "ano" : "anos")))
     : "Não informada";
   const garantiaValidade = (() => {
-    if (!garantiaMeses || !os.data) return "";
+    if (!garantiaValor || !os.data) return "";
     const d = new Date(os.data + "T12:00:00");
-    d.setMonth(d.getMonth() + garantiaMeses);
+    if (garantiaTipo === "meses") d.setMonth(d.getMonth() + garantiaValor);
+    if (garantiaTipo === "anos") d.setFullYear(d.getFullYear() + garantiaValor);
     return d.toLocaleDateString("pt-BR");
   })();
   const dataConclusaoTexto = fmtDate(os.dataConclusao || os.data);
@@ -1851,18 +1857,32 @@ function TelaOS({ os:ini, onSave, onClose }) {
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",colorScheme:"dark"}} />
         {/* Garantia - Oculto se for ORÇAMENTO */}
         {os.tipo !== "Orçamento" && (
-          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
-            <span style={{fontSize:12,color:T.muted,flexShrink:0}}>🛡 Garantia:</span>
-            <input type="number" value={os.garantiaMeses||""} onChange={e=>upd("garantiaMeses",e.target.value)}
-              placeholder="0" min="0" max="60"
-              style={{width:60,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-              color:T.text,padding:"6px 8px",fontSize:13,outline:"none",fontFamily:"inherit",
-              colorScheme:"dark",textAlign:"center"}}/>
-            <span style={{fontSize:12,color:T.muted}}>mese{os.garantiaMeses==1?"":"s"}</span>
-            {os.garantiaMeses>0&&os.data&&(()=>{
+          <div style={{display:"grid",gap:6,marginTop:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:T.muted,flexShrink:0,width:76}}>🛡 Garantia:</span>
+              <input type="number" value={os.garantiaMeses||""} onChange={e=>setOs(o=>({...o,garantiaMeses:e.target.value,garantiaAnos:e.target.value?"":o.garantiaAnos}))}
+                placeholder="0" min="0" max="60"
+                style={{width:60,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+                color:T.text,padding:"6px 8px",fontSize:13,outline:"none",fontFamily:"inherit",
+                colorScheme:"dark",textAlign:"center"}}/>
+              <span style={{fontSize:12,color:T.muted}}>mese{os.garantiaMeses==1?"":"s"}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:T.muted,flexShrink:0,width:76}}></span>
+              <input type="number" value={os.garantiaAnos||""} onChange={e=>setOs(o=>({...o,garantiaAnos:e.target.value,garantiaMeses:e.target.value?"":o.garantiaMeses}))}
+                placeholder="0" min="0" max="20"
+                style={{width:60,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+                color:T.text,padding:"6px 8px",fontSize:13,outline:"none",fontFamily:"inherit",
+                colorScheme:"dark",textAlign:"center"}}/>
+              <span style={{fontSize:12,color:T.muted}}>ano{os.garantiaAnos==1?"":"s"}</span>
+            </div>
+            {((parseInt(os.garantiaMeses||0)>0)||(parseInt(os.garantiaAnos||0)>0))&&os.data&&(()=>{
+              const garantiaMeses=parseInt(os.garantiaMeses||0);
+              const garantiaAnos=parseInt(os.garantiaAnos||0);
               const d=new Date(os.data+"T12:00:00");
-              d.setMonth(d.getMonth()+parseInt(os.garantiaMeses||0));
-              return <span style={{fontSize:11,color:T.green,marginLeft:4}}>✓ até {d.toLocaleDateString("pt-BR")}</span>;
+              if(garantiaMeses>0) d.setMonth(d.getMonth()+garantiaMeses);
+              else d.setFullYear(d.getFullYear()+garantiaAnos);
+              return <span style={{fontSize:11,color:T.green,marginLeft:84}}>✓ até {d.toLocaleDateString("pt-BR")}</span>;
             })()}
           </div>
         )}
