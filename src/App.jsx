@@ -47,6 +47,61 @@ const calcResultadoOS = os => {
 };
 const getConfig = () => { try { return JSON.parse(localStorage.getItem(K.config)||"{}"); } catch { return {}; } };
 const setConfig = v => localStorage.setItem(K.config, JSON.stringify({...getConfig(), ...v}));
+
+
+const OFICINA_ACCESS_PASSWORD = "Scarpel@2026";
+const OFICINA_ACCESS_KEY = "oficina_pro_access_ok_v1";
+
+function TelaAcessoOficina({ onLiberado }) {
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [lembrar, setLembrar] = useState(true);
+
+  const entrar = (e) => {
+    e.preventDefault();
+    if (senha === OFICINA_ACCESS_PASSWORD) {
+      const storage = lembrar ? localStorage : sessionStorage;
+      storage.setItem(OFICINA_ACCESS_KEY, "1");
+      setErro("");
+      onLiberado();
+      return;
+    }
+    setErro("Senha incorreta. Tente novamente.");
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter','Segoe UI',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <form onSubmit={entrar} style={{width:"100%",maxWidth:420,background:T.surface,border:"1px solid "+T.border,borderRadius:18,padding:24,boxShadow:"0 18px 60px #0008"}}>
+        <div style={{textAlign:"center",marginBottom:22}}>
+          <div style={{fontSize:42,marginBottom:8}}>🔐</div>
+          <h1 style={{fontSize:24,margin:"0 0 6px",color:T.text}}>Oficina Pro</h1>
+          <p style={{margin:0,color:T.sub,fontSize:14}}>Área interna M.Scarpel</p>
+        </div>
+        <label style={{display:"block",fontSize:13,color:T.sub,marginBottom:8}}>Senha de acesso</label>
+        <input
+          type="password"
+          value={senha}
+          onChange={e=>setSenha(e.target.value)}
+          autoFocus
+          autoComplete="current-password"
+          placeholder="Digite a senha"
+          style={{width:"100%",padding:"14px 15px",borderRadius:10,border:"1px solid "+T.border,background:T.card,color:T.text,fontSize:16,outline:"none",boxSizing:"border-box"}}
+        />
+        {erro && <div style={{marginTop:10,color:T.red,fontSize:13}}>{erro}</div>}
+        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:14,color:T.sub,fontSize:13}}>
+          <input type="checkbox" checked={lembrar} onChange={e=>setLembrar(e.target.checked)} />
+          Manter acesso liberado neste aparelho
+        </label>
+        <button type="submit" style={{width:"100%",marginTop:18,padding:"14px 16px",borderRadius:10,border:0,background:T.accent,color:"#111",fontWeight:800,fontSize:16,cursor:"pointer"}}>
+          Entrar
+        </button>
+        <p style={{margin:"16px 0 0",color:T.muted,fontSize:12,lineHeight:1.5,textAlign:"center"}}>
+          O catálogo público de películas continua disponível normalmente pelo link enviado aos clientes.
+        </p>
+      </form>
+    </div>
+  );
+}
 const getFeriados = () => {
   const f = getConfig().feriadosOficina || [];
   return Array.isArray(f) ? f : String(f||"").split(/[\n,; ]+/).map(x=>x.trim()).filter(Boolean);
@@ -2913,6 +2968,13 @@ export default function App() {
     }
     metaTheme.setAttribute("content", "#111318");
   },[]);
+  const [acessoLiberado, setAcessoLiberado] = useState(() => {
+    try {
+      return localStorage.getItem(OFICINA_ACCESS_KEY) === "1" || sessionStorage.getItem(OFICINA_ACCESS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [usuario, setUsuario] = useState(null);
   const [aba, setAba] = useState("ordens");
 
@@ -2921,6 +2983,10 @@ export default function App() {
     window.addEventListener("switchTab", handler);
     return () => window.removeEventListener("switchTab", handler);
   },[]);
+
+  if (!acessoLiberado) {
+    return <><GlobalStyle/><TelaAcessoOficina onLiberado={() => setAcessoLiberado(true)} /></>;
+  }
 
   if (!usuario) {
     setUsuario({user:"admin",senha:"",nivel:"admin",nome:"Administrador"});
