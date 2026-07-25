@@ -3002,6 +3002,16 @@ export default function App() {
     ...(isAdmin ? [{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
+  const sair = () => {
+    try {
+      localStorage.removeItem(OFICINA_ACCESS_KEY);
+      sessionStorage.removeItem(OFICINA_ACCESS_KEY);
+    } catch {}
+    setUsuario(null);
+    setAba("ordens");
+    setAcessoLiberado(false);
+  };
+
   return (
     <><GlobalStyle/><div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter','Segoe UI',sans-serif",overflowX:"hidden",maxWidth:"100vw"}}>
       <div style={{background:T.surface,borderBottom:"1px solid "+T.border,position:"sticky",top:0,zIndex:100,overflow:"hidden"}}>
@@ -3023,6 +3033,11 @@ export default function App() {
             ))}
           </div>
           <div style={{flexShrink:0,paddingRight:4}}><BotaoBackup /></div>
+          <button onClick={sair} title="Sair e pedir senha novamente" style={{
+            flexShrink:0,background:T.redLo,color:T.red,border:"1px solid "+T.red,
+            padding:"8px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
+            fontWeight:800,fontSize:12,whiteSpace:"nowrap"
+          }}>Sair</button>
         </div>
       </div>
       <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 12px"}}>
