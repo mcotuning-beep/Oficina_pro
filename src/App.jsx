@@ -49,7 +49,7 @@ const getConfig = () => { try { return JSON.parse(localStorage.getItem(K.config)
 const setConfig = v => localStorage.setItem(K.config, JSON.stringify({...getConfig(), ...v}));
 
 
-const OFICINA_ACCESS_PASSWORD = "Scarpel@2026";
+const OFICINA_ACCESS_PASSWORD = "m0000";
 const OFICINA_ACCESS_KEY = "oficina_pro_access_ok_v1";
 
 function TelaAcessoOficina({ onLiberado }) {
