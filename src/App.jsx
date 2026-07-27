@@ -2751,7 +2751,7 @@ function AbaAnalise(){
     const fimPeriodo = (periodo.m === hoje.getMonth() && periodo.a === hoje.getFullYear()) ? inicioHoje : `${periodo.a}-${String(periodo.m+1).padStart(2,"0")}-${String(new Date(periodo.a, periodo.m+1, 0).getDate()).padStart(2,"0")}`;
     const diasMeta = diasMetaAte(periodo.a, periodo.m, fimPeriodo, comValor);
     const metaAcumulada = metaNum * diasMeta;
-    const mediaLucroDiaUtil = diasMeta > 0 ? lucroReal / diasMeta : 0;
+    const mediaLucroRecebidoDiaUtil = diasMeta > 0 ? lucroMeta / diasMeta : 0;
     const saldoMeta = lucroMeta - metaAcumulada;
     const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroMeta/metaAcumulada)*100) : 0;
     const faltaMeta = Math.max(0, metaAcumulada - lucroMeta);
@@ -2829,9 +2829,6 @@ function AbaAnalise(){
         <div style={{background:T.greenLo,border:"1px solid "+T.green+"33",borderRadius:10,padding:"10px 8px",textAlign:"center",marginBottom:8}}>
           <div style={{fontSize:9,color:T.muted,marginBottom:4}}>Lucro Real do Mês</div>
           <div style={{fontSize:18,fontWeight:900,color:lucroReal>=0?T.green:T.red}}>{fmtR(lucroReal)}</div>
-          <div style={{fontSize:10,color:T.muted,marginTop:4,fontWeight:700}}>
-            Média: {diasMeta>0?fmtR(mediaLucroDiaUtil):"—"}/dia útil
-          </div>
         </div>
         <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
@@ -2863,7 +2860,13 @@ function AbaAnalise(){
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
             <div><div style={{fontSize:9,color:T.muted}}>Lucro recebido hoje</div><b style={{color:lucroHoje>=0?T.green:T.red}}>{fmtR(lucroHoje)}</b></div>
-            <div><div style={{fontSize:9,color:T.muted}}>Lucro recebido acum.</div><b style={{color:lucroMeta>=0?T.green:T.red}}>{fmtR(lucroMeta)}</b></div>
+            <div>
+              <div style={{fontSize:9,color:T.muted}}>Lucro recebido acum.</div>
+              <b style={{color:lucroMeta>=0?T.green:T.red}}>{fmtR(lucroMeta)}</b>
+              <div style={{fontSize:9,color:T.muted,marginTop:3,fontWeight:700}}>
+                Média: {diasMeta>0?fmtR(mediaLucroRecebidoDiaUtil):"—"}/dia útil
+              </div>
+            </div>
             <div><div style={{fontSize:9,color:T.muted}}>{saldoMeta>=0?"Acima":"Falta"}</div><b style={{color:saldoMeta>=0?T.green:T.accent}}>{metaNum>0?fmtR(Math.abs(saldoMeta)):"—"}</b></div>
           </div>
         </div>
