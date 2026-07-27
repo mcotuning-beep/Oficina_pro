@@ -2581,7 +2581,7 @@ function AbaSimulador(){
             fontSize: 13,fontFamily: "inherit"
           }}
         >
-          ✅ Quanto Recebo?
+          ✅ Quero Receber
         </button>
       </div>
 
@@ -2637,12 +2637,6 @@ function AbaSimulador(){
                 Cliente paga: {parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaVenda)}` : fmtBRL(valorCobrar)}
               </div>
             )}
-            {taxaPct > 0 && (
-              <div style={{fontSize:11,color:T.muted}}>
-                Descontar {fmtBRL(taxaAplicada)} de taxa ({taxaPct}%)
-                {parcelas>1 ? ` · líquido aprox. ${fmtBRL(parcelaLiquida)}/parcela` : ""}
-              </div>
-            )}
           </Card>
           {taxaPct > 0 && valor && (
             <Card style={{padding:12,background:T.accentLo,border:"1px solid "+T.accent}}>
@@ -2677,12 +2671,6 @@ function AbaSimulador(){
             {valor && (
               <div style={{fontSize:12,color:T.blue,fontWeight:800,marginBottom:6}}>
                 Cliente paga: {parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaSugerida)}` : fmtBRL(valorACobrar)}
-              </div>
-            )}
-            {taxaPct > 0 && (
-              <div style={{fontSize:11,color:T.muted}}>
-                Depois da taxa, você recebe {fmtBRL(valorDesejado)}
-                {parcelas>1 ? ` · líquido aprox. ${fmtBRL(parcelaRecebida)}/parcela` : ""}
               </div>
             )}
           </Card>
