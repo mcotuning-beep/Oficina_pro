@@ -208,6 +208,9 @@ const setOpcoesPagamento = v => localStorage.setItem("op_opcoes_pgto", JSON.stri
   console.log("✅ Dados da planilha carregados:", ordens.length, "OS");
 })();
 
+const STATUS_OS_ABERTA = ["Aberta","Em andamento","Aguardando peça"];
+const isOSAberta = o => STATUS_OS_ABERTA.includes(o?.status);
+
 const STATUS_COLOR = {
   "Orçamento":T.purple,"Aberta":T.blue,"Em andamento":T.accent,"Aguardando peça":T.purple,
   "Concluída":T.green,"Cancelada":T.red
@@ -1662,7 +1665,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
             options={["OS","Orçamento"]} />
           <Sel label="Status" value={os.tipo==="Orçamento"?"Orçamento":os.status}
             onChange={v=>upd("status",v)}
-            options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:["Aberta"])} />
+            options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:STATUS_OS_ABERTA)} />
         </div>
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
@@ -2195,7 +2198,7 @@ function AbaOrdens({ nivelAcesso }) {
   const filtradas = ordens.filter(o=>{
     const q = busca.toLowerCase();
     const mQ = !busca||o.placa?.toLowerCase().includes(q)||o.cliente?.toLowerCase().includes(q)||String(o.numero).includes(q);
-    const mS = isAdmin ? (filtroStatus==="Todas"||o.status===filtroStatus) : o.status==="Aberta";
+    const mS = isAdmin ? (filtroStatus==="Todas"||o.status===filtroStatus) : isOSAberta(o);
     let mD = true;
     if(isAdmin && ordenacao==="data_conclusao"){
       const dataOS = o.dataConclusao||o.data||"0000-00-00";
@@ -2226,12 +2229,12 @@ function AbaOrdens({ nivelAcesso }) {
 
   if (editandoId) {
     const os = ordens.find(o=>o.id===editandoId);
-    if (!os || (!isAdmin && os.status !== "Aberta")) {
+    if (!os || (!isAdmin && !isOSAberta(os))) {
       return (
         <div style={{display:"grid",gap:12}}>
           <button onClick={()=>{setEditandoId(null);reload();}}
             style={{justifySelf:"start",background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:18}}>← Voltar</button>
-          <Card>Esta O.S. não está aberta e não fica disponível no acesso da oficina.</Card>
+          <Card>Esta O.S. não está aberta/ativa e não fica disponível no acesso da oficina.</Card>
         </div>
       );
     }
@@ -2268,7 +2271,7 @@ function AbaOrdens({ nivelAcesso }) {
         <div style={{background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:10,
           padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:T.accent,fontWeight:700}}>
-            📋 {filtradas.length} {isAdmin && filtroStatus!=="Aberta" ? "OS encontrada(s)" : "OS aberta(s)"}{isAdmin && filtroStatus==="Aberta" ? " · saldo a receber" : ""}
+            📋 {filtradas.length} {isAdmin && filtroStatus!=="Aberta" ? "OS encontrada(s)" : "OS aberta(s)/ativa(s)"}{isAdmin && filtroStatus==="Aberta" ? " · saldo a receber" : ""}
           </span>
           {isAdmin && filtroStatus==="Aberta" && <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
             {fmtBRL(filtradas.reduce((s,o)=>s+calcSaldoOS(o),0))}
