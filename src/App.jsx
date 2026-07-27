@@ -1662,7 +1662,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
             options={["OS","Orçamento"]} />
           <Sel label="Status" value={os.tipo==="Orçamento"?"Orçamento":os.status}
             onChange={v=>upd("status",v)}
-            options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:["Aberta","Em andamento","Aguardando peça","Cancelada"])} />
+            options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:["Aberta"])} />
         </div>
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
@@ -2171,6 +2171,7 @@ function AbaAgenda() {
 // ── ABA ORDENS ────────────────────────────────────────────────────────────────
 
 function AbaOrdens({ nivelAcesso }) {
+  const isAdmin = nivelAcesso === "admin";
   const [ordens, setOrdens] = useState(()=>db.get(K.ordens));
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Aberta");
@@ -2194,9 +2195,9 @@ function AbaOrdens({ nivelAcesso }) {
   const filtradas = ordens.filter(o=>{
     const q = busca.toLowerCase();
     const mQ = !busca||o.placa?.toLowerCase().includes(q)||o.cliente?.toLowerCase().includes(q)||String(o.numero).includes(q);
-    const mS = filtroStatus==="Todas"||o.status===filtroStatus;
+    const mS = isAdmin ? (filtroStatus==="Todas"||o.status===filtroStatus) : o.status==="Aberta";
     let mD = true;
-    if(ordenacao==="data_conclusao"){
+    if(isAdmin && ordenacao==="data_conclusao"){
       const dataOS = o.dataConclusao||o.data||"0000-00-00";
       const mesOS = dataOS.substring(0,7);
       const mesAtual = today().substring(0,7);
@@ -2204,7 +2205,7 @@ function AbaOrdens({ nivelAcesso }) {
     }
     return mQ&&mS&&mD;
   }).sort((a,b)=>{
-    if(ordenacao==="data_conclusao"){
+    if(isAdmin && ordenacao==="data_conclusao"){
       const dA = (a.dataConclusao||a.data||'0');
       const dB = (b.dataConclusao||b.data||'0');
       return dB.localeCompare(dA);
@@ -2225,6 +2226,15 @@ function AbaOrdens({ nivelAcesso }) {
 
   if (editandoId) {
     const os = ordens.find(o=>o.id===editandoId);
+    if (!os || (!isAdmin && os.status !== "Aberta")) {
+      return (
+        <div style={{display:"grid",gap:12}}>
+          <button onClick={()=>{setEditandoId(null);reload();}}
+            style={{justifySelf:"start",background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:18}}>← Voltar</button>
+          <Card>Esta O.S. não está aberta e não fica disponível no acesso da oficina.</Card>
+        </div>
+      );
+    }
     return (
       <div>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
@@ -2245,24 +2255,24 @@ function AbaOrdens({ nivelAcesso }) {
           placeholder="Buscar por placa, cliente ou número..."
           style={{flex:1,minWidth:200,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
             color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none"}} />
-        <Sel value={filtroStatus} onChange={setFiltroStatus}
-          options={["Todas","Orçamento","Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />
-        {(filtroStatus==="Concluída"||filtroStatus==="Todas")&&(
+        {isAdmin && <Sel value={filtroStatus} onChange={setFiltroStatus}
+          options={["Todas","Orçamento","Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />}
+        {isAdmin && (filtroStatus==="Concluída"||filtroStatus==="Todas")&&(
           <Sel value={ordenacao} onChange={setOrdenacao}
             options={[{l:"Número da OS",v:"numero"},{l:"Data de Conclusão",v:"data_conclusao"}]} />
         )}
         <Btn onClick={()=>setNova(true)}>+ Nova OS</Btn>
       </div>
 
-      {filtroStatus==="Aberta"&&filtradas.length>0&&(
+      {filtradas.length>0&&(
         <div style={{background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:10,
           padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:T.accent,fontWeight:700}}>
-            💰 {filtradas.length} OS em aberto · saldo a receber
+            📋 {filtradas.length} {isAdmin && filtroStatus!=="Aberta" ? "OS encontrada(s)" : "OS aberta(s)"}{isAdmin && filtroStatus==="Aberta" ? " · saldo a receber" : ""}
           </span>
-          <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
+          {isAdmin && filtroStatus==="Aberta" && <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
             {fmtBRL(filtradas.reduce((s,o)=>s+calcSaldoOS(o),0))}
-          </span>
+          </span>}
         </div>
       )}
 
