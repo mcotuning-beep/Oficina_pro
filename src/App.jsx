@@ -2569,7 +2569,7 @@ function AbaSimulador(){
             fontSize: 13,fontFamily: "inherit"
           }}
         >
-          💰 Quanto Cobrar?
+          💰 Quanto Vou Receber
         </button>
         <button
           onClick={() => { setModo("receber"); setValor(""); }}
