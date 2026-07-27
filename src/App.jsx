@@ -2540,16 +2540,21 @@ function AbaSimulador(){
 
   const taxa = taxas.find(t => t.id === taxaId) || taxas[0];
   const taxaPct = taxa?.taxa || 0;
+  const parcelas = Math.max(1, parseInt(taxa?.parcelas || 1));
 
   // COBRAR: quanto pedir → quanto recebo
   const valorCobrar = parseFloat(valor) || 0;
   const taxaAplicada = valorCobrar * (taxaPct / 100);
   const recebimento = valorCobrar - taxaAplicada;
+  const parcelaVenda = valorCobrar / parcelas;
+  const parcelaLiquida = recebimento / parcelas;
 
   // RECEBER: quanto quero receber → quanto cobrar
   const valorDesejado = parseFloat(valor) || 0;
   const valorACobrar = taxaPct > 0 ? (valorDesejado * 100) / (100 - taxaPct) : valorDesejado;
   const taxaAplicada2 = valorACobrar - valorDesejado;
+  const parcelaSugerida = valorACobrar / parcelas;
+  const parcelaRecebida = valorDesejado / parcelas;
 
   return (
     <div style={{padding:4}}>
@@ -2627,9 +2632,15 @@ function AbaSimulador(){
             <div style={{fontSize:28,fontWeight:900,color:T.green,marginBottom:8}}>
               {fmtBRL(recebimento)}
             </div>
+            {valor && (
+              <div style={{fontSize:12,color:T.blue,fontWeight:800,marginBottom:6}}>
+                Cliente paga: {parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaVenda)}` : fmtBRL(valorCobrar)}
+              </div>
+            )}
             {taxaPct > 0 && (
               <div style={{fontSize:11,color:T.muted}}>
                 Descontar {fmtBRL(taxaAplicada)} de taxa ({taxaPct}%)
+                {parcelas>1 ? ` · líquido aprox. ${fmtBRL(parcelaLiquida)}/parcela` : ""}
               </div>
             )}
           </Card>
@@ -2639,6 +2650,10 @@ function AbaSimulador(){
                 <div>
                   <div style={{color:T.muted,marginBottom:2}}>Valor Original</div>
                   <div style={{fontWeight:700,color:T.text}}>{fmtBRL(valorCobrar)}</div>
+                </div>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Parcela do cliente</div>
+                  <div style={{fontWeight:700,color:T.blue}}>{parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaVenda)}` : fmtBRL(valorCobrar)}</div>
                 </div>
                 <div>
                   <div style={{color:T.muted,marginBottom:2}}>Taxa</div>
@@ -2659,9 +2674,15 @@ function AbaSimulador(){
             <div style={{fontSize:28,fontWeight:900,color:T.green,marginBottom:8}}>
               {fmtBRL(valorACobrar)}
             </div>
+            {valor && (
+              <div style={{fontSize:12,color:T.blue,fontWeight:800,marginBottom:6}}>
+                Cliente paga: {parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaSugerida)}` : fmtBRL(valorACobrar)}
+              </div>
+            )}
             {taxaPct > 0 && (
               <div style={{fontSize:11,color:T.muted}}>
                 Depois da taxa, você recebe {fmtBRL(valorDesejado)}
+                {parcelas>1 ? ` · líquido aprox. ${fmtBRL(parcelaRecebida)}/parcela` : ""}
               </div>
             )}
           </Card>
@@ -2671,6 +2692,10 @@ function AbaSimulador(){
                 <div>
                   <div style={{color:T.muted,marginBottom:2}}>Cobrar</div>
                   <div style={{fontWeight:700,color:T.text}}>{fmtBRL(valorACobrar)}</div>
+                </div>
+                <div>
+                  <div style={{color:T.muted,marginBottom:2}}>Parcela do cliente</div>
+                  <div style={{fontWeight:700,color:T.blue}}>{parcelas>1 ? `${parcelas}x de ${fmtBRL(parcelaSugerida)}` : fmtBRL(valorACobrar)}</div>
                 </div>
                 <div>
                   <div style={{color:T.muted,marginBottom:2}}>Taxa</div>
