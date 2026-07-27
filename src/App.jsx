@@ -49,24 +49,28 @@ const getConfig = () => { try { return JSON.parse(localStorage.getItem(K.config)
 const setConfig = v => localStorage.setItem(K.config, JSON.stringify({...getConfig(), ...v}));
 
 
-const OFICINA_ACCESS_PASSWORD = "m0000";
+const ADMIN_ACCESS_PASSWORD = "oficina123";
 const OFICINA_ACCESS_KEY = "oficina_pro_access_ok_v1";
+const OFICINA_USER_KEY = "oficina_pro_user_v1";
 
-function TelaAcessoOficina({ onLiberado }) {
+function TelaAcessoOficina({ onLogin }) {
+  const [user, setUser] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [lembrar, setLembrar] = useState(true);
 
   const entrar = (e) => {
     e.preventDefault();
-    if (senha === OFICINA_ACCESS_PASSWORD) {
+    const u = USUARIOS.find(x=>x.user===user.trim().toLowerCase()&&x.senha===senha);
+    if (u) {
       const storage = lembrar ? localStorage : sessionStorage;
       storage.setItem(OFICINA_ACCESS_KEY, "1");
+      storage.setItem(OFICINA_USER_KEY, JSON.stringify({user:u.user,nivel:u.nivel,nome:u.nome}));
       setErro("");
-      onLiberado();
+      onLogin(u);
       return;
     }
-    setErro("Senha incorreta. Tente novamente.");
+    setErro("Usuário ou senha incorretos.");
   };
 
   return (
@@ -77,12 +81,20 @@ function TelaAcessoOficina({ onLiberado }) {
           <h1 style={{fontSize:24,margin:"0 0 6px",color:T.text}}>Oficina Pro</h1>
           <p style={{margin:0,color:T.sub,fontSize:14}}>Área interna M.Scarpel</p>
         </div>
-        <label style={{display:"block",fontSize:13,color:T.sub,marginBottom:8}}>Senha de acesso</label>
+        <label style={{display:"block",fontSize:13,color:T.sub,marginBottom:8}}>Usuário</label>
+        <input
+          value={user}
+          onChange={e=>setUser(e.target.value)}
+          autoFocus
+          autoComplete="username"
+          placeholder="Ex: oficina"
+          style={{width:"100%",padding:"14px 15px",borderRadius:10,border:"1px solid "+T.border,background:T.card,color:T.text,fontSize:16,outline:"none",boxSizing:"border-box",marginBottom:12}}
+        />
+        <label style={{display:"block",fontSize:13,color:T.sub,marginBottom:8}}>Senha</label>
         <input
           type="password"
           value={senha}
           onChange={e=>setSenha(e.target.value)}
-          autoFocus
           autoComplete="current-password"
           placeholder="Digite a senha"
           style={{width:"100%",padding:"14px 15px",borderRadius:10,border:"1px solid "+T.border,background:T.card,color:T.text,fontSize:16,outline:"none",boxSizing:"border-box"}}
@@ -1462,7 +1474,7 @@ function ModalOpcoesPagamento({ onClose }) {
   </Modal>;
 }
 
-function TelaOS({ os:ini, onSave, onClose }) {
+function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const mk = () => ({id:uid(),numero:null,placa:"",veiculo:"",ano:"",cliente:"",
     telefone:"",km:"",servicos:"",itens:[],maoDeObra:"",observacao:"",outrosCustos:"",
     status:"Aberta",tipo:"OS",data:today(),pagamentos:[],incluirDadosPagamento:false});
@@ -1480,6 +1492,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
   const [opcoesPagamentoOpen, setOpcoesPagamentoOpen] = useState(false);
   const [aiLoad, setAiLoad] = useState(false);
   const [aiResp, setAiResp] = useState("");
+  const isAdmin = nivelAcesso === "admin";
 
   const upd = (k,v) => setOs(o=>{
     const novo = {...o,[k]:v};
@@ -1544,6 +1557,10 @@ function TelaOS({ os:ini, onSave, onClose }) {
 
   const salvarLocal = (osFinal) => {
     const f = osFinal||os;
+    if (!isAdmin && f.status === "Concluída") {
+      toast("Fechamento bloqueado: digite a senha master para concluir a OS.");
+      return null;
+    }
     if (f.cliente) {
       const clis = db.get(K.clientes);
       const idxCli = clis.findIndex(c=>c.nome?.toLowerCase()===f.cliente.toLowerCase());
@@ -1645,7 +1662,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
             options={["OS","Orçamento"]} />
           <Sel label="Status" value={os.tipo==="Orçamento"?"Orçamento":os.status}
             onChange={v=>upd("status",v)}
-            options={os.tipo==="Orçamento"?["Orçamento"]:["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]} />
+            options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:["Aberta","Em andamento","Aguardando peça","Cancelada"])} />
         </div>
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
@@ -1696,7 +1713,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
             </button>
           </div>
         </div>
-        <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>
+        {isAdmin && <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>}
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input type="checkbox" checked={os.incluirDadosPagamento||false} onChange={e=>upd("incluirDadosPagamento",e.target.checked)}
             style={{width:18,height:18,cursor:"pointer",accentColor:T.green}} />
@@ -1704,7 +1721,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
             onClick={()=>upd("incluirDadosPagamento",!os.incluirDadosPagamento)}>
             💳 Incluir dados de pagamento nesta O.S.
           </label>
-          <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
+          {isAdmin && <Btn v="ghost" onClick={()=>setDadosPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>}
         </div>
 
         <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderTop:"1px solid "+T.border,borderBottom:"1px solid "+T.border}}>
@@ -1714,7 +1731,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
             onClick={()=>upd("incluirOpcoesPagamento",!os.incluirOpcoesPagamento)}>
             💰 Incluir opções de pagamento nesta O.S.
           </label>
-          <Btn v="ghost" onClick={()=>setOpcoesPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>
+          {isAdmin && <Btn v="ghost" onClick={()=>setOpcoesPagamentoOpen(true)} style={{padding:"6px 10px",fontSize:11}}>Editar</Btn>}
         </div>
 
         <BotaoAgenda os={os} />
@@ -1861,7 +1878,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
         );
       })()}
 
-      <div style={{background:T.surface,border:"1px solid "+T.green+"44",borderRadius:12,padding:14,display:"grid",gap:10}}>
+      {isAdmin && <div style={{background:T.surface,border:"1px solid "+T.green+"44",borderRadius:12,padding:14,display:"grid",gap:10}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
           <div>
             <div style={{fontSize:11,color:T.green,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8}}>💰 Fechamento financeiro da OS</div>
@@ -1887,7 +1904,7 @@ function TelaOS({ os:ini, onSave, onClose }) {
           <span>Taxas: <b style={{color:T.red}}>- {fmtBRL(fechamento.taxas)}</b></span>
           <span>Margem: <b style={{color:fechamento.margem>=0?T.green:T.red}}>{fechamento.margem.toFixed(1).replace(".",",")}%</b></span>
         </div>
-      </div>
+      </div>}
 
       <div>
         <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:4}}>Observações</label>
@@ -1947,10 +1964,18 @@ function TelaOS({ os:ini, onSave, onClose }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
         <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>👁 Prévia</Btn>
-        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{salvarLocal();setPagtoOpen(true);}} full>{calcSaldoOS(os)>0.009&&os.pagamentos?.length?"💰 Pgto/Saldo":"💳 Fechar Pgto"}</Btn>}
+        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{
+          const final = salvarLocal();
+          if(!final) return;
+          if(!isAdmin){
+            const senhaMaster = window.prompt("Digite a senha master para fechamento da OS:");
+            if(senhaMaster !== ADMIN_ACCESS_PASSWORD){ toast("Senha master incorreta."); return; }
+          }
+          setPagtoOpen(true);
+        }} full>{calcSaldoOS(os)>0.009&&os.pagamentos?.length?"💰 Pgto/Saldo":"💳 Fechar Pgto"}</Btn>}
         <Btn onClick={()=>salvar()} full>💾 Salvar OS</Btn>
       </div>
-      {os.numero && (
+      {isAdmin && os.numero && (
         <ConfirmarExclusao osId={os.id} onConfirm={()=>{onSave&&onSave(null);}} />
       )}
 
@@ -2194,7 +2219,7 @@ function AbaOrdens({ nivelAcesso }) {
           style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:18}}>←</button>
         <span style={{fontWeight:800,fontSize:16}}>Nova Ordem de Serviço</span>
       </div>
-      <TelaOS onSave={()=>{setNova(false);reload();}} onClose={()=>setNova(false)} />
+      <TelaOS nivelAcesso={nivelAcesso} onSave={()=>{setNova(false);reload();}} onClose={()=>setNova(false)} />
     </div>
   );
 
@@ -2208,7 +2233,7 @@ function AbaOrdens({ nivelAcesso }) {
           <span style={{fontWeight:800,fontSize:16}}>OS #{String(os?.numero||"").padStart(4,"0")} — {os?.placa}</span>
           {os?.status && <Badge color={STATUS_COLOR[os.status]||T.muted}>{os.status}</Badge>}
         </div>
-        <TelaOS os={os} onSave={()=>{setEditandoId(null);reload();}} onClose={()=>setEditandoId(null)} />
+        <TelaOS os={os} nivelAcesso={nivelAcesso} onSave={()=>{setEditandoId(null);reload();}} onClose={()=>setEditandoId(null)} />
       </div>
     );
   }
@@ -2942,6 +2967,7 @@ function AbaAnalise(){
 
 const USUARIOS = [
   {user:"admin",senha:"oficina123",nivel:"admin",nome:"Administrador"},
+  {user:"oficina",senha:"123456",nivel:"oficina",nome:"Celular da oficina"},
   {user:"mecanico",senha:"mec456",nivel:"mecanico",nome:"Mecânico"},
 ];
 
@@ -2969,7 +2995,7 @@ function TelaLogin({ onLogin }) {
             <Btn onClick={login} full sz="lg">Entrar</Btn>
             <div style={{fontSize:11,color:T.muted,textAlign:"center",lineHeight:1.8}}>
               Admin: <b style={{color:T.text}}>admin</b> / <b style={{color:T.text}}>oficina123</b><br />
-              Mecânico: <b style={{color:T.text}}>mecanico</b> / <b style={{color:T.text}}>mec456</b>
+              Oficina: <b style={{color:T.text}}>oficina</b> / <b style={{color:T.text}}>123456</b>
             </div>
           </div>
         </Card>
@@ -3001,14 +3027,15 @@ export default function App() {
     }
     metaTheme.setAttribute("content", "#111318");
   },[]);
-  const [acessoLiberado, setAcessoLiberado] = useState(() => {
+  const [usuario, setUsuario] = useState(() => {
     try {
-      return localStorage.getItem(OFICINA_ACCESS_KEY) === "1" || sessionStorage.getItem(OFICINA_ACCESS_KEY) === "1";
+      const raw = localStorage.getItem(OFICINA_USER_KEY) || sessionStorage.getItem(OFICINA_USER_KEY);
+      const ok = localStorage.getItem(OFICINA_ACCESS_KEY) === "1" || sessionStorage.getItem(OFICINA_ACCESS_KEY) === "1";
+      return ok && raw ? JSON.parse(raw) : null;
     } catch {
-      return false;
+      return null;
     }
   });
-  const [usuario, setUsuario] = useState(null);
   const [aba, setAba] = useState("ordens");
 
   useEffect(()=>{
@@ -3017,32 +3044,25 @@ export default function App() {
     return () => window.removeEventListener("switchTab", handler);
   },[]);
 
-  if (!acessoLiberado) {
-    return <><GlobalStyle/><TelaAcessoOficina onLiberado={() => setAcessoLiberado(true)} /></>;
-  }
-
   if (!usuario) {
-    setUsuario({user:"admin",senha:"",nivel:"admin",nome:"Administrador"});
-    return null;
+    return <><GlobalStyle/><TelaAcessoOficina onLogin={u => setUsuario({user:u.user,nivel:u.nivel,nome:u.nome})} /></>;
   }
 
   const isAdmin = usuario.nivel==="admin";
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
-    {id:"agenda",icon:"📅",label:"Agenda"},
-    {id:"produtos",icon:"📦",label:"Produtos"},
-    {id:"simulador",icon:"🧮",label:"Simulador"},
-    ...(isAdmin ? [{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
+    ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"},{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
   const sair = () => {
     try {
       localStorage.removeItem(OFICINA_ACCESS_KEY);
       sessionStorage.removeItem(OFICINA_ACCESS_KEY);
+      localStorage.removeItem(OFICINA_USER_KEY);
+      sessionStorage.removeItem(OFICINA_USER_KEY);
     } catch {}
     setUsuario(null);
     setAba("ordens");
-    setAcessoLiberado(false);
   };
 
   return (
@@ -3064,7 +3084,7 @@ export default function App() {
               }}>{a.icon} {a.label}</button>
             ))}
           </div>
-          <div style={{flexShrink:0,paddingRight:4}}><BotaoBackup /></div>
+          {isAdmin && <div style={{flexShrink:0,paddingRight:4}}><BotaoBackup /></div>}
           <button onClick={sair} title="Sair e pedir senha novamente" style={{
             flexShrink:0,background:T.redLo,color:T.red,border:"1px solid "+T.red,
             padding:"8px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
