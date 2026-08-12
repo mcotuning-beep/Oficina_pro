@@ -7,7 +7,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -2389,6 +2389,55 @@ function AbaProdutos() {
   );
 }
 
+// ── ABA COMPRAS ───────────────────────────────────────────────────────────────
+
+function AbaCompras() {
+  const [itens, setItens] = useState(()=>db.get(K.compras));
+  const [texto, setTexto] = useState("");
+  const reload = () => setItens(db.get(K.compras));
+
+  const adicionar = () => {
+    const nome = texto.trim();
+    if(!nome) return;
+    const novo = {id:uid(), nome};
+    db.set(K.compras,[...db.get(K.compras), novo]);
+    setTexto("");
+    reload();
+  };
+
+  const marcarComprado = id => {
+    db.set(K.compras, db.get(K.compras).filter(i=>i.id!==id));
+    reload();
+  };
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
+        <input value={texto} onChange={e=>setTexto(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter") adicionar(); }}
+          placeholder="O que você precisa comprar?"
+          style={{flex:1,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+            color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none"}} />
+        <Btn onClick={adicionar} disabled={!texto.trim()}>+ Adicionar</Btn>
+      </div>
+      {itens.length===0 ? (
+        <div style={{textAlign:"center",color:T.muted,padding:60}}>
+          <div style={{fontSize:48,marginBottom:10}}>🛒</div><p>Nenhum item na lista de compras.</p>
+        </div>
+      ) : (
+        <div style={{display:"grid",gap:8}}>
+          {itens.map(item => (
+            <Card key={item.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px"}}>
+              <span style={{fontSize:14,color:T.text}}>{item.nome}</span>
+              <Btn v="green" sz="sm" onClick={()=>marcarComprado(item.id)}>✅ Comprado</Btn>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ABA TAXAS ─────────────────────────────────────────────────────────────────
 
 function AbaTaxas() {
@@ -3064,6 +3113,7 @@ export default function App() {
   const isAdmin = usuario.nivel==="admin";
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
+    {id:"compras",icon:"🛒",label:"Compras"},
     ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"},{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
@@ -3107,6 +3157,7 @@ export default function App() {
       </div>
       <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 12px"}}>
         {aba==="ordens" && <AbaOrdens nivelAcesso={usuario.nivel} />}
+        {aba==="compras" && <AbaCompras />}
         {aba==="agenda" && <AbaAgenda />}
         {aba==="produtos" && <AbaProdutos />}
         {aba==="simulador" && <AbaSimulador />}
