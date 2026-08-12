@@ -3113,8 +3113,9 @@ export default function App() {
   const isAdmin = usuario.nivel==="admin";
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
+    ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"}] : []),
     {id:"compras",icon:"🛒",label:"Compras"},
-    ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"},{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
+    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
   const sair = () => {
