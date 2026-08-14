@@ -2921,23 +2921,48 @@ function AbaAnalise(){
     const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroMeta/metaAcumulada)*100) : 0;
     const faltaMeta = Math.max(0, metaAcumulada - lucroMeta);
 
+    // Ranking por serviço/produto (não por OS inteira): quebra cada OS nos
+    // itens/peças que a compõem + a mão de obra, e agrupa por nome. Assim,
+    // uma OS com "Carga de gás + troca de sensor" aparece como duas linhas
+    // separadas no ranking, em vez de uma linha só somando tudo.
     const mapa = {};
-    comValor.forEach(o => {
-      const valor = calcResultadoOS(o).lucro;
-      const servico = String(o.servicos || "").trim() || (o.itens && o.itens[0]?.descricao) || "";
-      // Remove valores R$ e pega só o nome do serviço (até 35 chars)
-      const limpo = servico
+    const addRank = (nomeBruto, qtd, valor) => {
+      const limpo = String(nomeBruto||"")
         .replace(/R\$[\d.,\s]+/g,"")  // remove valores monetários
         .replace(/[\d]{2,}[.,][\d]{2}/g,"") // remove preços
         .trim();
-      // Pega primeira linha ou primeiro segmento
       const primeira = limpo.split(/\n|\+/)[0].trim();
       const nome = (primeira && primeira.length > 2)
         ? primeira.toUpperCase().slice(0,35)
-        : (servico.slice(0,35).toUpperCase() || "SEM DESCRIÇÃO");
+        : (String(nomeBruto||"").slice(0,35).toUpperCase() || "SEM DESCRIÇÃO");
       if(!mapa[nome]) mapa[nome] = {nome, total:0, count:0};
       mapa[nome].total += valor;
-      mapa[nome].count += 1;
+      mapa[nome].count += qtd;
+    };
+    comValor.forEach(o => {
+      const itens = o.itens || [];
+      if (itens.length) {
+        // Cada peça/produto vira uma linha própria no ranking, com o lucro
+        // bruto dela (venda - custo). Descontos, taxa de maquininha e outros
+        // custos ficam no nível da OS e não são rateados item a item.
+        itens.forEach(i => {
+          const qty = parseFloat(i.qty||1) || 1;
+          const venda = parseFloat(i.venda||0) * qty;
+          const custo = parseFloat(i.custo||0) * qty;
+          addRank(i.descricao, qty, venda - custo);
+        });
+        const mao = parseFloat(o.maoDeObra||0);
+        if (mao !== 0) {
+          const nomeServ = String(o.servicos||"").trim() || "MÃO DE OBRA";
+          addRank(nomeServ, 1, mao);
+        }
+      } else {
+        // OS legada/importada sem itens discriminados: mantém o comportamento
+        // antigo, usando o lucro total da OS como um único "produto/serviço".
+        const valor = calcResultadoOS(o).lucro;
+        const servico = String(o.servicos || "").trim();
+        addRank(servico, 1, valor);
+      }
     });
     const rank = Object.values(mapa).sort((a,b)=>b.total-a.total);
     const maxV = rank.length > 0 ? rank[0].total : 1;
