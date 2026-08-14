@@ -21,6 +21,35 @@ const today = () => {
   return d.toISOString().slice(0,10);
 };
 const dataRelatorio = o => (o?.status === "Concluída" ? (o.dataConclusao || o.data) : o?.data) || "";
+const normalizarTexto = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().trim();
+// Conta ocorrências de "serviços-chave" (ex: Carga de Gás) mesmo quando eles
+// aparecem misturados dentro de uma OS maior (junto com outros serviços/peças),
+// olhando tanto os itens (peças/serviços) quanto o texto livre da OS.
+const contarServicosChave = (ordens, chaves) => {
+  const chavesNorm = (chaves||[]).map(c=>normalizarTexto(c)).filter(Boolean);
+  if (!chavesNorm.length) return [];
+  const mapa = {};
+  chavesNorm.forEach(c => { mapa[c] = {chave:c, count:0, valor:0, semValor:0}; });
+  ordens.forEach(o => {
+    const textoLivre = normalizarTexto((o.servicos||"") + " " + (o.observacao||""));
+    const itens = o.itens || [];
+    chavesNorm.forEach(chave => {
+      const itensMatch = itens.filter(i => normalizarTexto(i.descricao).includes(chave));
+      if (itensMatch.length) {
+        itensMatch.forEach(i => {
+          mapa[chave].count += 1;
+          mapa[chave].valor += parseFloat(i.venda||0) * (parseFloat(i.qty||1) || 1);
+        });
+      } else if (textoLivre.includes(chave)) {
+        // Achou a palavra-chave no texto da OS (ex: "manutenção no compressor e carga de gás")
+        // mas não como um item discriminado: conta a ocorrência sem valor específico.
+        mapa[chave].count += 1;
+        mapa[chave].semValor += 1;
+      }
+    });
+  });
+  return Object.values(mapa).filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+};
 const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*(parseFloat(i.qty||1)||1),0)+parseFloat(os.maoDeObra||0);
 const calcCustoPecas = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.custo||0)*(parseFloat(i.qty||1)||1),0);
 const calcTotalPago = os => (os?.pagamentos||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0);
@@ -1582,10 +1611,36 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
     }
     const ordens = db.get(K.ordens);
     const maxN = Math.max(0,...ordens.map(o=>o.numero||0));
+    // Só carimba dataConclusao = hoje quando a OS está REALMENTE transicionando
+    // para "Concluída" agora (não estava concluída antes). Se já estava
+    // concluída, preserva a data original (mesmo que esteja vazia/legada),
+    // a menos que o usuário tenha informado uma data manualmente no campo editável.
+    const estavaConcluida = ini?.status === "Concluída";
+    const dataConclusaoFinal = f.status === "Concluída"
+      ? (f.dataConclusao || (estavaConcluida ? ini.dataConclusao : today()))
+      : undefined;
+    // Recalcula custo das peças / lucro / margem sempre que a OS já tem
+    // dados financeiros congelados (pagamentos, ou já foi concluída), para
+    // que correções feitas nos itens (peças) depois do fechamento se
+    // reflitam no lucro real e no ranking de serviços, em vez de manter
+    // o valor antigo travado.
+    const temDadosFinanceiros = (f.pagamentos||[]).length > 0 || f.status === "Concluída";
+    const custoPecasRecalc = calcCustoPecas(f);
+    const outrosCustosRecalc = Number(f.outrosCustos || 0);
+    const totalBrutoRecalc = Number(f.totalBruto ?? calcTotal(f));
+    const totalLiquidoRecalc = Number(f.totalLiquido ?? (totalBrutoRecalc - Number(f.desconto||0) - Number(f.totalTaxas||0)));
+    const lucroRecalc = totalLiquidoRecalc - custoPecasRecalc - outrosCustosRecalc;
+    const baseMargemRecalc = Math.max(0.01, totalBrutoRecalc - Number(f.desconto||0));
+    const margemRecalc = (lucroRecalc / baseMargemRecalc) * 100;
     const final = {
       ...f,
       numero:f.numero||(maxN+1),
-      ...(f.status === "Concluída" ? {dataConclusao: f.dataConclusao || today()} : {dataConclusao: undefined})
+      dataConclusao: dataConclusaoFinal,
+      ...(temDadosFinanceiros ? {
+        custoPecas: custoPecasRecalc,
+        lucroReal: lucroRecalc,
+        margemReal: margemRecalc
+      } : {})
     };
     db.set(K.ordens,[...ordens.filter(o=>o.id!==final.id),final]);
     setOs(final);
@@ -1667,6 +1722,12 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
             onChange={v=>upd("status",v)}
             options={os.tipo==="Orçamento"?["Orçamento"]:(isAdmin?["Aberta","Em andamento","Aguardando peça","Concluída","Cancelada"]:STATUS_OS_ABERTA)} />
         </div>
+        {isAdmin && os.status==="Concluída" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+            <Inp label="Data de conclusão (editável)" type="date"
+              value={os.dataConclusao||""} onChange={v=>upd("dataConclusao",v)} />
+          </div>
+        )}
       </div>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
         <div style={{position:"relative"}}>
@@ -2801,6 +2862,9 @@ function AbaAnalise(){
   const [periodo, setPeriodo] = useState({m: hoje.getMonth(), a: hoje.getFullYear()});
   const [metaDiaria, setMetaDiaria] = useState(getConfig().metaDiariaLucro || "");
   const [feriadoHoje, setFeriadoHoje] = useState(getConfig().feriadoHoje === today() || false);
+  const [servicosChaveTexto, setServicosChaveTexto] = useState(
+    getConfig().servicosChave || "Carga de Gás"
+  );
 
   const navMes = (dir) => {
     setPeriodo(p => {
@@ -2877,6 +2941,12 @@ function AbaAnalise(){
     });
     const rank = Object.values(mapa).sort((a,b)=>b.total-a.total);
     const maxV = rank.length > 0 ? rank[0].total : 1;
+
+    // Serviços-chave: contam quantas vezes um serviço "carro-chefe" (ex: Carga
+    // de Gás) foi feito no mês, mesmo quando ele vem junto com outros serviços
+    // dentro da mesma OS (ex: "manutenção no compressor + carga de gás").
+    const chaves = servicosChaveTexto.split(",").map(s=>s.trim()).filter(Boolean);
+    const contagemChave = contarServicosChave(comValor, chaves);
 
     return (
       <div style={{padding:4}}>
@@ -2983,6 +3053,42 @@ function AbaAnalise(){
             <div><div style={{fontSize:9,color:T.muted}}>{saldoMeta>=0?"Acima":"Falta"}</div><b style={{color:saldoMeta>=0?T.green:T.accent}}>{metaNum>0?fmtR(Math.abs(saldoMeta)):"—"}</b></div>
           </div>
         </div>
+
+        <div style={{background:T.card,border:"1px solid "+T.accent+"44",borderRadius:12,padding:12,marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:8}}>
+            <div>
+              <div style={{fontSize:11,color:T.accent,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Serviços-chave (contagem)</div>
+              <div style={{fontSize:10,color:T.muted}}>Conta quantas vezes um serviço apareceu, mesmo dentro de OS com outros serviços juntos.</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
+            <input value={servicosChaveTexto}
+              onChange={e=>{setServicosChaveTexto(e.target.value);}}
+              onBlur={()=>{setConfig({servicosChave:servicosChaveTexto});}}
+              placeholder="Carga de Gás, Insulfilme, Película..."
+              style={{flex:1,background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"7px 8px",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}} />
+          </div>
+          {contagemChave.length === 0 ? (
+            <div style={{textAlign:"center",color:T.muted,padding:12,fontSize:12}}>
+              Nenhuma ocorrência em {MESES_F[periodo.m]}. Separe as palavras-chave por vírgula acima (ex: "Carga de Gás").
+            </div>
+          ) : (
+            <div style={{display:"grid",gap:6}}>
+              {contagemChave.map(c => (
+                <div key={c.chave} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.bg,borderRadius:8,padding:"8px 10px"}}>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text}}>{c.chave}</span>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:14,fontWeight:900,color:T.accent}}>{c.count}x</div>
+                    <div style={{fontSize:9,color:T.muted}}>
+                      {c.valor>0 ? fmtR(c.valor) : ""}{c.semValor>0 ? (c.valor>0?" + ":"")+c.semValor+" sem valor discriminado" : ""}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {rank.length === 0 ? (
           <div style={{textAlign:"center",color:T.muted,padding:40}}>
             <div style={{fontSize:40,marginBottom:8}}>📊</div>
