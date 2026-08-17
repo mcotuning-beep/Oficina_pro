@@ -1132,6 +1132,15 @@ ${os.incluirDadosPagamento?(()=>{
     const f = {...getClienteFiscal(os.cliente), ...(os.fiscal||{})};
     const linhasItens = (os.itens||[]).map(i=>`<tr><td>${i.descricao||""}</td><td style="text-align:center">${i.qty||1}</td><td style="text-align:right">R$ ${(parseFloat(i.venda||0)*(parseInt(i.qty||1)||1)).toFixed(2).replace(".",",")}</td></tr>`).join("");
     const endereco = [f.endereco, f.numero, f.complemento, f.bairro, f.cidade, f.estado, f.cep].filter(Boolean).join(" - ");
+    const dp = getDadosPagamento();
+    const dadosPagamentoBox = (os.incluirDadosPagamento && dp.nome) ? `<div class="box"><div class="title">💳 Dados para pagamento</div><div class="grid">
+${dp.nome?`<div><div class="lb">Titular</div><div class="vl">${dp.nome}</div></div>`:""}
+${dp.banco?`<div><div class="lb">Banco</div><div class="vl">${dp.banco}</div></div>`:""}
+${dp.agencia?`<div><div class="lb">Agência</div><div class="vl">${dp.agencia}</div></div>`:""}
+${dp.conta?`<div><div class="lb">Conta</div><div class="vl">${dp.conta}</div></div>`:""}
+${dp.cnpj?`<div><div class="lb">PIX</div><div class="vl">${dp.cnpj}</div></div>`:""}
+${dp.pix&&dp.pix!==dp.cnpj?`<div><div class="lb">PIX Alt.</div><div class="vl">${dp.pix}</div></div>`:""}
+</div></div>` : "";
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF Fiscal OS #${os.numero||""}</title>
 <style>
 *{box-sizing:border-box} body{font-family:Arial,sans-serif;color:#111;background:#fff;margin:0;padding:28px;font-size:13px;line-height:1.45}.page{border:1px solid #ddd;border-radius:12px;padding:22px;min-height:1040px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #111;padding-bottom:12px;margin-bottom:18px}.brand{font-size:22px;font-weight:900}.brand span{color:#d97706}.sub{font-size:12px;color:#555;margin-top:4px}.box{border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin:12px 0}.title{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.8px;color:#d97706;margin-bottom:8px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}.lb{font-size:10px;text-transform:uppercase;color:#777;font-weight:700}.vl{font-weight:700;margin-top:2px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#111;color:#fff;text-align:left;padding:8px;font-size:12px}td{border-bottom:1px solid #eee;padding:8px}.total{display:flex;justify-content:space-between;font-size:20px;font-weight:900;border-top:2px solid #111;margin-top:12px;padding-top:10px}.note{background:#fffbeb;border-left:4px solid #d97706;padding:10px;margin-top:14px;font-size:12px}.foot{margin-top:18px;border-top:1px dashed #ddd;padding-top:10px;color:#666;font-size:11px}@page{size:A4;margin:10mm}@media print{body{padding:0}.page{border:none;min-height:auto}}
@@ -1149,6 +1158,7 @@ ${f.tipoPessoa!=="PF"?`<div><div class="lb">Nome fantasia</div><div class="vl">$
 </div></div>
 <div class="box"><div class="title">Dados do veículo</div><div class="grid"><div><div class="lb">Placa</div><div class="vl">${os.placa||"-"}</div></div><div><div class="lb">Veículo</div><div class="vl">${os.veiculo||"-"}</div></div><div><div class="lb">Ano</div><div class="vl">${os.ano||"-"}</div></div><div><div class="lb">KM</div><div class="vl">${os.km||"-"}</div></div></div></div>
 <div class="box"><div class="title">Serviços / Produtos para emissão da nota</div>${os.servicos?`<div style="white-space:pre-wrap;margin-bottom:8px">${os.servicos}</div>`:""}<table><thead><tr><th>Descrição</th><th style="width:60px;text-align:center">Qtd</th><th style="width:120px;text-align:right">Valor</th></tr></thead><tbody>${linhasItens||""}<tr><td>Mão de obra / Serviços</td><td style="text-align:center">1</td><td style="text-align:right">R$ ${parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")}</td></tr></tbody></table><div class="total"><span>Total da OS</span><span>${fmtBRL(total)}</span></div></div>
+${dadosPagamentoBox}
 <div class="note"><b>Observação para contabilidade:</b> documento gerado a partir da Ordem de Serviço para auxiliar a emissão da Nota Fiscal. Conferir dados fiscais antes da emissão.</div>
 <div class="foot">M.SCARPEL Serviços Automotivos · Documento interno para envio à contadora</div>
 </div></body></html>`;
