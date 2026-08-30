@@ -1916,9 +1916,8 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
       </div>
 
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
-        <Inp label="Mão de obra (R$)" type="number" value={os.maoDeObra} onChange={v=>upd("maoDeObra",v)} placeholder="0,00" />
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:4}}>
-          <span style={{fontSize:12,color:T.muted}}>Peças: {fmtBRL(os.itens.reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0))} · MO: {fmtBRL(os.maoDeObra)}</span>
+          <span style={{fontSize:12,color:T.muted}}>Peças: {fmtBRL(os.itens.reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0))}</span>
           <span style={{fontSize:20,fontWeight:900,color:T.green}}>Total: {fmtBRL(total)}</span>
         </div>
       </div>
