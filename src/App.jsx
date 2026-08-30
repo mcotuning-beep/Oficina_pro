@@ -2244,6 +2244,188 @@ function AbaAgenda() {
 
 // ── ABA ORDENS ────────────────────────────────────────────────────────────────
 
+function ModalResumoFechamento({ cliente, ordens, onClose }) {
+  const previewFrameRef = useRef(null);
+  const totalGeral = ordens.reduce((s,o)=>s+calcSaldoOS(o),0);
+  const telefone = (ordens.find(o=>o.telefone)?.telefone) || "";
+  const dataEmissao = fmtDate(today());
+
+  const linhasOS = ordens.map(o => `
+    <tr>
+      <td><b>#${String(o.numero).padStart(4,"0")}</b></td>
+      <td>${o.placa||"-"} <span style="color:#777">${o.veiculo||""}</span></td>
+      <td>${fmtDate(o.data)}</td>
+      <td>${o.status||"-"}</td>
+      <td style="text-align:right;font-weight:700">R$ ${calcSaldoOS(o).toFixed(2).replace(".",",")}</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumo de Fechamento — ${cliente}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:11px;line-height:1.4}
+body.share-mode{padding:10px}
+.doc-page{max-width:520px;margin:0 auto;background:#fff}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:10px}
+.enome{font-size:16px;font-weight:900}
+.enome span{color:#d97706}
+.edet{font-size:9px;color:#555;margin-top:3px;line-height:1.4}
+.os-box{border:1px solid #111;border-radius:6px;padding:6px 10px;text-align:right;font-size:11px}
+.sec{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:#d97706;margin:10px 0 4px}
+.cli-row{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{background:#111;color:#fff;text-align:left;padding:6px;font-size:9.5px}
+td{border-bottom:1px solid #eee;padding:6px;font-size:10px}
+.tot{display:flex;justify-content:space-between;font-size:16px;font-weight:900;border-top:2px solid #111;margin-top:10px;padding-top:8px}
+.thanks{text-align:center;margin-top:16px;font-size:10px;color:#555}
+.brand-foot{text-align:center;font-weight:900;font-size:11px;margin-top:4px}
+.brand-foot span{color:#d97706}
+.foot{display:flex;justify-content:space-between;margin-top:10px;border-top:1px dashed #ddd;padding-top:8px;font-size:8.5px;color:#666}
+</style></head>
+<body>
+<div class="doc-page">
+  <div class="hdr">
+    <div>
+      <div class="enome">M.<span>SCARPEL</span></div>
+      <div class="edet">Serviços Automotivos<br>Av. Cachoeira 747 A3, Vila Pindorama, Barueri/SP<br>(11) 9.3922-8558 &nbsp;|&nbsp; CNPJ: 17.562.963/0001-81</div>
+    </div>
+    <div class="os-box">Resumo de<br><b>Fechamento</b><br>${dataEmissao}</div>
+  </div>
+
+  <div class="sec">Cliente</div>
+  <div class="cli-row"><span><b>${cliente}</b></span><span>${telefone||""}</span></div>
+
+  <div class="sec">Ordens de Serviço em aberto (${ordens.length})</div>
+  <table>
+    <thead><tr><th>OS</th><th>Veículo</th><th>Data</th><th>Status</th><th style="text-align:right">Saldo</th></tr></thead>
+    <tbody>${linhasOS}</tbody>
+  </table>
+
+  <div class="tot"><span>Total pendente</span><span>R$ ${totalGeral.toFixed(2).replace(".",",")}</span></div>
+
+  <div class="thanks">Agradecemos a preferência!</div>
+  <div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
+  <div class="foot">
+    <div><b>Fale conosco</b><br>(11) 9.3922-8558</div>
+    <div><b>Qualidade e confiança</b><br>Compromisso com o seu veículo</div>
+  </div>
+</div>
+</body></html>`;
+
+  const htmlShare = html.replace('<body>', '<body class="share-mode">');
+  const htmlPreview = htmlShare;
+
+  const loadScript = (src) => new Promise((res,rej)=>{
+    if (document.querySelector('script[src="'+src+'"]')) { res(); return; }
+    const s = document.createElement("script");
+    s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error("Falha ao carregar biblioteca (sem internet ou CDN bloqueado)"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
+  });
+
+  const obterLarguraPreview = () => {
+    const frame = previewFrameRef.current;
+    if (frame) {
+      const rect = frame.getBoundingClientRect();
+      if (rect.width) return Math.round(rect.width);
+    }
+    return Math.round(window.innerWidth || 420);
+  };
+
+  const aguardarImagens = async (doc) => {
+    const imgs = Array.from(doc.images || []);
+    await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    })));
+  };
+
+  const capturarDocumento = async (largura) => {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const larguraFinal = Math.round(largura);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(htmlShare);
+    doc.close();
+
+    doc.documentElement.style.width = larguraFinal+"px";
+    doc.body.style.width = larguraFinal+"px";
+    doc.body.style.margin = "0";
+
+    await aguardarImagens(doc);
+    await new Promise(r=>setTimeout(r,300));
+
+    const alturaFinal = Math.ceil(doc.body.scrollHeight);
+    iframe.style.height = alturaFinal+"px";
+
+    const canvas = await window.html2canvas(doc.body, {
+      scale:2, useCORS:true, allowTaint:true,
+      windowWidth:larguraFinal, width:larguraFinal, height:alturaFinal,
+      backgroundColor:"#ffffff"
+    });
+    document.body.removeChild(iframe);
+    return canvas;
+  };
+
+  const exportarImagem = async () => {
+    toast("Gerando imagem...");
+    try {
+      const largura = Math.min(Math.max(obterLarguraPreview(), 390), 520);
+      const canvas = await capturarDocumento(largura);
+      const nome = "Fechamento_"+cliente.replace(/[^a-zA-Z0-9]+/g,"_")+".png";
+      const blob = await new Promise(res => canvas.toBlob(res,"image/png",1.0));
+      const file = new File([blob], nome, {type:"image/png"});
+
+      if (navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
+        await navigator.share({
+          files:[file],
+          title:"Resumo de Fechamento — "+cliente,
+          text:"Resumo das O.S. em aberto de "+cliente
+        });
+        return;
+      }
+      const link = document.createElement("a");
+      link.download = nome;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast("Imagem salva nos downloads.");
+    } catch(e) {
+      if (e.name!=="AbortError") alert("Erro ao compartilhar imagem: "+e.message);
+    }
+  };
+
+  const imprimir = () => {
+    const w = window.open("","_blank","width=800,height=600");
+    w.document.write(html); w.document.close(); w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:300,
+      display:"flex",flexDirection:"column"}}>
+      <button onClick={onClose} aria-label="Fechar prévia" style={{position:"absolute",top:10,right:10,zIndex:2,
+        width:38,height:38,borderRadius:19,border:"1px solid rgba(255,255,255,.25)",
+        background:"rgba(15,23,42,.82)",color:"#fff",fontSize:22,lineHeight:"34px",cursor:"pointer"}}>×</button>
+      <div style={{flex:1,overflow:"hidden",background:"#fff"}}>
+        <iframe ref={previewFrameRef} srcDoc={htmlPreview} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia Fechamento" />
+      </div>
+      <div style={{background:T.surface,borderTop:"1px solid "+T.border,
+        padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
+        flexWrap:"wrap",flexShrink:0}}>
+        <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
+        <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
+      </div>
+      <div style={{marginTop:8,fontSize:11,color:T.muted,textAlign:"center"}}>
+        ⚠️ Compartilhamento direto funciona após hospedar o app. Por enquanto salva nos downloads.
+      </div>
+    </div>
+  );
+}
+
 function AbaOrdens({ nivelAcesso }) {
   const isAdmin = nivelAcesso === "admin";
   const [ordens, setOrdens] = useState(()=>db.get(K.ordens));
@@ -2253,6 +2435,7 @@ function AbaOrdens({ nivelAcesso }) {
   const [editandoId, setEditandoId] = useState(null);
   const [nova, setNova] = useState(false);
   const [previaOS, setPreviaOS] = useState(null);
+  const [fechamentoAberto, setFechamentoAberto] = useState(false);
 
   const reload = () => setOrdens(db.get(K.ordens));
 
@@ -2340,13 +2523,18 @@ function AbaOrdens({ nivelAcesso }) {
 
       {filtradas.length>0&&(
         <div style={{background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:10,
-          padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          padding:"10px 14px",marginBottom:12,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:T.accent,fontWeight:700}}>
             📋 {filtradas.length} {isAdmin && filtroStatus!=="Aberta" ? "OS encontrada(s)" : "OS aberta(s)/ativa(s)"}{isAdmin && filtroStatus==="Aberta" ? " · saldo a receber" : ""}
           </span>
           {isAdmin && filtroStatus==="Aberta" && <span style={{fontSize:15,fontWeight:900,color:T.accent}}>
             {fmtBRL(filtradas.reduce((s,o)=>s+calcSaldoOS(o),0))}
           </span>}
+          </div>
+          {busca && (!isAdmin || filtroStatus==="Aberta") && (
+            <Btn v="orange" sz="sm" onClick={()=>setFechamentoAberto(true)}>📤 Enviar Resumo de Fechamento</Btn>
+          )}
         </div>
       )}
 
@@ -2401,6 +2589,7 @@ function AbaOrdens({ nivelAcesso }) {
         </div>
       )}
       {previaOS && <ModalImpressao os={previaOS} onClose={()=>setPreviaOS(null)} />}
+      {fechamentoAberto && <ModalResumoFechamento cliente={filtradas[0]?.cliente||"Cliente"} ordens={filtradas} onClose={()=>setFechamentoAberto(false)} />}
     </div>
   );
 }
