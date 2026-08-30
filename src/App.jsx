@@ -3098,7 +3098,6 @@ function AbaAnalise(){
       return d.getMonth() === periodo.m && d.getFullYear() === periodo.a;
     });
     const totalRecebido = recebimentosMes.reduce((s,r)=>s+Number(r.valor||0),0);
-    const lucroMeta = movimentosLucroMes.reduce((s,r)=>s+Number(r.lucro||0),0);
     const totalFat = totalRecebido;
     const totalTaxas = comValor.reduce((s,o) => s + Number(o.totalTaxas||0), 0);
     const totalDescontos = comValor.reduce((s,o) => s + Number(o.desconto||0), 0);
@@ -3114,7 +3113,13 @@ function AbaAnalise(){
     const fimPeriodo = (periodo.m === hoje.getMonth() && periodo.a === hoje.getFullYear()) ? inicioHoje : `${periodo.a}-${String(periodo.m+1).padStart(2,"0")}-${String(new Date(periodo.a, periodo.m+1, 0).getDate()).padStart(2,"0")}`;
     const diasMeta = diasMetaAte(periodo.a, periodo.m, fimPeriodo, comValor);
     const metaAcumulada = metaNum * diasMeta;
-    const lucroAdiantamentos = lucroMeta - lucroReal;
+    // Adiantamentos = lucro proporcional já recebido em O.S. que AINDA estão em
+    // aberto (não concluídas). Ao concluir, o lucro inteiro passa a entrar em
+    // "lucroReal" no mês da conclusão — então nunca é contado duas vezes, e
+    // este valor nunca fica negativo (corrige o bug de adiantamento/quitação
+    // em meses diferentes, ex: O.S. #169).
+    const lucroAdiantamentos = movimentosLucroMes.filter(r => isOSAberta(r.os)).reduce((s,r)=>s+Number(r.lucro||0),0);
+    const lucroMeta = lucroReal + lucroAdiantamentos;
     const mediaLucroRecebidoDiaUtil = diasMeta > 0 ? lucroMeta / diasMeta : 0;
     const saldoMeta = lucroMeta - metaAcumulada;
     const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroMeta/metaAcumulada)*100) : 0;
