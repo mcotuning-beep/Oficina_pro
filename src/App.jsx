@@ -3167,7 +3167,7 @@ function AbaAnalise(){
         addRank(servico, 1, valor);
       }
     });
-    const rank = Object.values(mapa).sort((a,b)=>b.total-a.total);
+    const rank = Object.values(mapa).sort((a,b)=>b.total-a.total).slice(0,5);
     const maxV = rank.length > 0 ? rank[0].total : 1;
 
     // Serviços-chave: contam quantas vezes um serviço "carro-chefe" (ex: Carga
