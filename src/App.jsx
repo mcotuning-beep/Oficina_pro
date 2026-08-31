@@ -1532,8 +1532,6 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
   const [opcoesPagamentoOpen, setOpcoesPagamentoOpen] = useState(false);
-  const [aiLoad, setAiLoad] = useState(false);
-  const [aiResp, setAiResp] = useState("");
   const isAdmin = nivelAcesso === "admin";
 
   const upd = (k,v) => setOs(o=>{
@@ -1664,21 +1662,6 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
     onSave&&onSave(final);
   };
 
-  const consultarIA = async () => {
-    if (!os.servicos) return;
-    setAiLoad(true); setAiResp("");
-    try {
-      const r = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:800,
-          system:"Você é mecânico especialista. Responda em pt-BR, de forma direta. Liste peças e serviços em tópicos curtos.",
-          messages:[{role:"user",content:"Veículo: "+(os.veiculo||"não informado")+" "+(os.ano||"")+". Problema: \""+os.servicos+"\". Quais peças e serviços são necessários?"}]})});
-      const d = await r.json();
-      setAiResp(d.content?.map(c=>c.text).join("")||"Sem resposta.");
-    } catch(e) { setAiResp("Erro ao consultar IA."); }
-    setAiLoad(false);
-  };
-
   return (
     <div style={{display:"grid",gap:14}}>
       <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
@@ -1757,35 +1740,11 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:3}}>
           <label style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>Telefone</label>
-          <div style={{display:"flex",gap:4}}>
-            <input value={os.telefone||""} onChange={e=>upd("telefone",e.target.value)}
-              placeholder="(11) 99999-0000"
-              style={{flex:1,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-              color:T.text,padding:"8px 10px",fontSize:13,outline:"none",
-              fontFamily:"inherit",colorScheme:"dark",boxSizing:"border-box"}}/>
-            <button title="Buscar contato na agenda do celular"
-              onClick={async()=>{
-                try{
-                  if(!("contacts" in navigator)){
-                    toast("📱 Disponível após hospedar o app");
-                    return;
-                  }
-                  const cs=await navigator.contacts.select(["name","tel"],{multiple:false});
-                  if(cs&&cs.length>0){
-                    if(cs[0].name&&cs[0].name[0]) upd("cliente",cs[0].name[0]);
-                    if(cs[0].tel&&cs[0].tel[0]) upd("telefone",cs[0].tel[0]);
-                    toast("✓ Contato importado!");
-                  }
-                }catch(e){
-                  toast("📱 Disponível após hospedar o app");
-                }
-              }}
-              style={{background:T.greenLo,border:"1px solid "+T.green+"44",
-              borderRadius:8,color:T.green,cursor:"pointer",
-              padding:"8px 12px",fontSize:16,flexShrink:0}}>
-              📱
-            </button>
-          </div>
+          <input value={os.telefone||""} onChange={e=>upd("telefone",e.target.value)}
+            placeholder="(11) 99999-0000"
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+            color:T.text,padding:"8px 10px",fontSize:13,outline:"none",
+            fontFamily:"inherit",colorScheme:"dark",boxSizing:"border-box"}}/>
         </div>
         {isAdmin && <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>}
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1813,19 +1772,10 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
 
       <div style={{background:T.bg,borderRadius:10,padding:14}}>
         <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:6}}>Problema / Serviços solicitados</label>
-        <div style={{display:"flex",gap:8}}>
-          <textarea value={os.servicos} onChange={e=>upd("servicos",e.target.value)}
-            placeholder="Ex: farol não acende, trocar pastilha de freio..." rows={2}
-            style={{flex:1,background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-              color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical"}} />
-          <Btn v="ghost" onClick={consultarIA} disabled={aiLoad||!os.servicos} style={{alignSelf:"flex-start"}}>
-            {aiLoad?"⏳":"🤖"} IA
-          </Btn>
-        </div>
-        {aiResp && (
-          <div style={{marginTop:10,background:T.surface,borderRadius:8,padding:12,
-            fontSize:13,color:T.text,lineHeight:1.7,whiteSpace:"pre-wrap",borderLeft:"3px solid "+T.accent}}>{aiResp}</div>
-        )}
+        <textarea value={os.servicos} onChange={e=>upd("servicos",e.target.value)}
+          placeholder="Ex: farol não acende, trocar pastilha de freio..." rows={2}
+          style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
+            color:T.text,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}} />
       </div>
 
       <div>
