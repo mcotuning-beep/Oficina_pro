@@ -2394,11 +2394,21 @@ function ModalFechamentoMes({ dados, onClose }) {
       <td style="text-align:right;font-weight:700">${fmtR(r.total)}</td>
     </tr>`).join("");
 
-  const metaBox = dados.metaAcumulada > 0 ? `
+  const bateu = dados.percMeta >= 100;
+  const metaBox = dados.metaDiaria > 0 ? `
   <div class="sec">Meta de Lucro</div>
-  <div class="cli-row"><span>Meta acumulada no período</span><span><b>${fmtR(dados.metaAcumulada)}</b></span></div>
-  <div class="cli-row"><span>Atingido</span><span><b style="color:${dados.percMeta>=100?'#16a34a':'#d97706'}">${dados.percMeta.toFixed(0)}%</b></span></div>
-  ` : "";
+  <div class="cli-row"><span>Meta diária configurada</span><span><b>${fmtR(dados.metaDiaria)}/dia</b></span></div>
+  <div class="cli-row"><span>Dias úteis no período</span><span><b>${dados.diasMeta}</b></span></div>
+  <div class="cli-row"><span>Meta do mês</span><span><b>${fmtR(dados.metaAcumulada)}</b></span></div>
+  <div style="background:${bateu?'#f0fdf4':'#fef2f2'};border:1px solid ${bateu?'#16a34a44':'#dc262644'};border-radius:8px;padding:8px 10px;margin-top:6px;text-align:center">
+    <div style="font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:${bateu?'#16a34a':'#dc2626'}">${bateu?'✅ Meta Batida':'❌ Meta Não Atingida'}</div>
+    <div style="font-size:16px;font-weight:900;margin-top:2px">${dados.percMeta.toFixed(0)}%</div>
+    <div style="font-size:9px;color:#666;margin-top:2px">${bateu?'Superou a meta em '+fmtR(dados.saldoMeta):'Faltou '+fmtR(dados.faltaMeta)+' para bater a meta'}</div>
+  </div>
+  ` : `
+  <div class="sec">Meta de Lucro</div>
+  <div class="cli-row"><span>Nenhuma meta diária configurada</span><span>—</span></div>
+  `;
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fechamento Mensal — ${dados.mes}/${dados.ano}</title>
 <style>
@@ -2447,6 +2457,10 @@ td{border-bottom:1px solid #eee;padding:5px 6px;font-size:10px}
   <div class="cli-row"><span>Adiantamentos (O.S. em aberto)</span><span><b>${fmtR(dados.lucroAdiantamentos)}</b></span></div>
   <div class="cli-row" style="border-top:1px solid #eee;padding-top:3px;margin-top:3px"><span><b>Considerado</b></span><span><b style="font-size:13px">${fmtR(dados.lucroMeta)}</b></span></div>
   <div class="cli-row"><span>Média por dia útil</span><span>${fmtR(dados.mediaLucroRecebidoDiaUtil)}</span></div>
+  <div style="background:#fff7ed;border:1px solid #f59e0b44;border-radius:8px;padding:8px 10px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:#d97706">📊 Margem de Lucro</span>
+    <span style="font-size:16px;font-weight:900">${dados.margemLucro.toFixed(1)}%</span>
+  </div>
   ${metaBox}
 
   ${linhasCustos ? `<div class="sec">Custos do Mês</div><table><tbody>${linhasCustos}</tbody></table>` : ""}
@@ -3278,6 +3292,9 @@ function AbaAnalise(){
     const saldoMeta = lucroMeta - metaAcumulada;
     const percMeta = metaAcumulada > 0 ? Math.min(999, (lucroMeta/metaAcumulada)*100) : 0;
     const faltaMeta = Math.max(0, metaAcumulada - lucroMeta);
+    // Margem de lucro sobre o faturamento: de cada R$ vendido/recebido, quanto
+    // efetivamente vira lucro (não confundir faturamento alto com lucro alto).
+    const margemLucro = totalFat > 0 ? (lucroMeta/totalFat)*100 : 0;
 
     // Ranking por serviço/produto (não por OS inteira): quebra cada OS nos
     // itens/peças que a compõem + a mão de obra, e agrupa por nome. Assim,
@@ -3336,7 +3353,8 @@ function AbaAnalise(){
       qtdOS: comValor.length, totalRecebido: totalFat, lucroMedio,
       totalTaxas, totalDescontos, totalCustoPecas, totalOutrosCustos,
       lucroReal, lucroAdiantamentos, lucroMeta, mediaLucroRecebidoDiaUtil,
-      metaAcumulada, percMeta, rank,
+      metaDiaria: metaNum, diasMeta, metaAcumulada, saldoMeta, percMeta, faltaMeta,
+      rank, margemLucro,
     };
 
     return (
@@ -3411,6 +3429,11 @@ function AbaAnalise(){
           <div style={{fontSize:10,color:T.muted,marginTop:7,fontWeight:700,textAlign:"center"}}>
             Média: {diasMeta>0?fmtR(mediaLucroRecebidoDiaUtil):"—"}/dia útil
           </div>
+        </div>
+        <div style={{background:T.card,border:"1px solid "+T.accent+"44",borderRadius:12,padding:"12px 14px",marginBottom:8,textAlign:"center"}}>
+          <div style={{fontSize:10,color:T.muted,marginBottom:4,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>📊 Margem de Lucro</div>
+          <div style={{fontSize:28,fontWeight:900,color:margemLucro>=0?T.green:T.red}}>{margemLucro.toFixed(1)}%</div>
+          <div style={{fontSize:10,color:T.muted,marginTop:4}}>De cada R$ 100,00 vendidos, R$ {margemLucro.toFixed(2).replace(".",",")} viram lucro</div>
         </div>
         <div style={{background:T.card,border:"1px solid "+T.blue+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8}}>
