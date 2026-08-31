@@ -921,7 +921,7 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
   <thead><tr><th>Descricao</th><th style="text-align:center;width:40px">Qtd</th><th style="text-align:right;width:80px">Valor</th></tr></thead>
   <tbody>
     ${itensRows||"<tr><td colspan='3' style='text-align:center;color:#ccc;padding:10px'>-</td></tr>"}
-    <tr style="background:#f5f5f5"><td style="font-weight:600">Mao de obra</td><td style="text-align:center">1</td><td style="text-align:right;font-weight:700">R$ ${parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")}</td></tr>
+    ${parseFloat(os.maoDeObra||0)>0?"<tr style=\"background:#f5f5f5\"><td style=\"font-weight:600\">Mao de obra</td><td style=\"text-align:center\">1</td><td style=\"text-align:right;font-weight:700\">R$ "+parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")+"</td></tr>":""}
   </tbody>
 </table>
 
@@ -1157,7 +1157,7 @@ ${f.tipoPessoa!=="PF"?`<div><div class="lb">Nome fantasia</div><div class="vl">$
 <div style="grid-column:1/-1"><div class="lb">Endereço</div><div class="vl">${endereco||"-"}</div></div>
 </div></div>
 <div class="box"><div class="title">Dados do veículo</div><div class="grid"><div><div class="lb">Placa</div><div class="vl">${os.placa||"-"}</div></div><div><div class="lb">Veículo</div><div class="vl">${os.veiculo||"-"}</div></div><div><div class="lb">Ano</div><div class="vl">${os.ano||"-"}</div></div><div><div class="lb">KM</div><div class="vl">${os.km||"-"}</div></div></div></div>
-<div class="box"><div class="title">Serviços / Produtos para emissão da nota</div>${os.servicos?`<div style="white-space:pre-wrap;margin-bottom:8px">${os.servicos}</div>`:""}<table><thead><tr><th>Descrição</th><th style="width:60px;text-align:center">Qtd</th><th style="width:120px;text-align:right">Valor</th></tr></thead><tbody>${linhasItens||""}<tr><td>Mão de obra / Serviços</td><td style="text-align:center">1</td><td style="text-align:right">R$ ${parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")}</td></tr></tbody></table><div class="total"><span>Total da OS</span><span>${fmtBRL(total)}</span></div></div>
+<div class="box"><div class="title">Serviços / Produtos para emissão da nota</div>${os.servicos?`<div style="white-space:pre-wrap;margin-bottom:8px">${os.servicos}</div>`:""}<table><thead><tr><th>Descrição</th><th style="width:60px;text-align:center">Qtd</th><th style="width:120px;text-align:right">Valor</th></tr></thead><tbody>${linhasItens||""}${parseFloat(os.maoDeObra||0)>0?"<tr><td>Mão de obra / Serviços</td><td style=\"text-align:center\">1</td><td style=\"text-align:right\">R$ "+parseFloat(os.maoDeObra||0).toFixed(2).replace(".",",")+"</td></tr>":""}</tbody></table><div class="total"><span>Total da OS</span><span>${fmtBRL(total)}</span></div></div>
 ${dadosPagamentoBox}
 <div class="note"><b>Observação para contabilidade:</b> documento gerado a partir da Ordem de Serviço para auxiliar a emissão da Nota Fiscal. Conferir dados fiscais antes da emissão.</div>
 <div class="foot">M.SCARPEL Serviços Automotivos · Documento interno para envio à contadora</div>
@@ -2375,6 +2375,210 @@ td{border-bottom:1px solid #eee;padding:6px;font-size:10px}
   );
 }
 
+function ModalFechamentoMes({ dados, onClose }) {
+  const previewFrameRef = useRef(null);
+  const dataEmissao = fmtDate(today());
+  const fmtR = v => "R$ " + Number(v||0).toFixed(2).replace(".",",");
+
+  const linhasCustos = [
+    dados.totalTaxas>0 ? `<tr><td>Taxa Maquininha</td><td style="text-align:right;color:#dc2626">-${fmtR(dados.totalTaxas)}</td></tr>` : "",
+    dados.totalDescontos>0 ? `<tr><td>Descontos</td><td style="text-align:right;color:#dc2626">-${fmtR(dados.totalDescontos)}</td></tr>` : "",
+    dados.totalCustoPecas>0 ? `<tr><td>Custo das Peças</td><td style="text-align:right;color:#dc2626">-${fmtR(dados.totalCustoPecas)}</td></tr>` : "",
+    dados.totalOutrosCustos>0 ? `<tr><td>Outros Custos</td><td style="text-align:right;color:#dc2626">-${fmtR(dados.totalOutrosCustos)}</td></tr>` : "",
+  ].join("");
+
+  const linhasRank = (dados.rank||[]).map((r,i) => `
+    <tr>
+      <td>${i+1}º ${r.nome}</td>
+      <td style="text-align:center">${r.count}x</td>
+      <td style="text-align:right;font-weight:700">${fmtR(r.total)}</td>
+    </tr>`).join("");
+
+  const metaBox = dados.metaAcumulada > 0 ? `
+  <div class="sec">Meta de Lucro</div>
+  <div class="cli-row"><span>Meta acumulada no período</span><span><b>${fmtR(dados.metaAcumulada)}</b></span></div>
+  <div class="cli-row"><span>Atingido</span><span><b style="color:${dados.percMeta>=100?'#16a34a':'#d97706'}">${dados.percMeta.toFixed(0)}%</b></span></div>
+  ` : "";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fechamento Mensal — ${dados.mes}/${dados.ano}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:11px;line-height:1.4}
+body.share-mode{padding:10px}
+.doc-page{max-width:520px;margin:0 auto;background:#fff}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:10px}
+.enome{font-size:16px;font-weight:900}
+.enome span{color:#d97706}
+.edet{font-size:9px;color:#555;margin-top:3px;line-height:1.4}
+.os-box{border:1px solid #111;border-radius:6px;padding:6px 10px;text-align:right;font-size:11px}
+.sec{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:#d97706;margin:10px 0 4px}
+.cli-row{display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:3px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:8px 0}
+.stat-box{border:1px solid #eee;border-radius:6px;padding:8px 4px;text-align:center}
+.stat-lb{font-size:7.5px;color:#999;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.stat-vl{font-size:12px;font-weight:900}
+table{width:100%;border-collapse:collapse;margin-top:4px}
+th{background:#111;color:#fff;text-align:left;padding:6px;font-size:9.5px}
+td{border-bottom:1px solid #eee;padding:5px 6px;font-size:10px}
+.tot{display:flex;justify-content:space-between;font-size:15px;font-weight:900;border-top:2px solid #111;margin-top:10px;padding-top:8px}
+.thanks{text-align:center;margin-top:16px;font-size:10px;color:#555}
+.brand-foot{text-align:center;font-weight:900;font-size:11px;margin-top:4px}
+.brand-foot span{color:#d97706}
+.foot{display:flex;justify-content:space-between;margin-top:10px;border-top:1px dashed #ddd;padding-top:8px;font-size:8.5px;color:#666}
+</style></head>
+<body>
+<div class="doc-page">
+  <div class="hdr">
+    <div>
+      <div class="enome">M.<span>SCARPEL</span></div>
+      <div class="edet">Serviços Automotivos<br>Av. Cachoeira 747 A3, Vila Pindorama, Barueri/SP<br>(11) 9.3922-8558 &nbsp;|&nbsp; CNPJ: 17.562.963/0001-81</div>
+    </div>
+    <div class="os-box">Fechamento<br><b>${dados.mes}/${dados.ano}</b><br>${dataEmissao}</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-box"><div class="stat-lb">O.S. Concluídas</div><div class="stat-vl">${dados.qtdOS}</div></div>
+    <div class="stat-box"><div class="stat-lb">Total Recebido</div><div class="stat-vl">${fmtR(dados.totalRecebido)}</div></div>
+    <div class="stat-box"><div class="stat-lb">Lucro Médio/OS</div><div class="stat-vl">${fmtR(dados.lucroMedio)}</div></div>
+  </div>
+
+  <div class="sec">Lucro do Mês</div>
+  <div class="cli-row"><span>O.S. concluídas</span><span><b>${fmtR(dados.lucroReal)}</b></span></div>
+  <div class="cli-row"><span>Adiantamentos (O.S. em aberto)</span><span><b>${fmtR(dados.lucroAdiantamentos)}</b></span></div>
+  <div class="cli-row" style="border-top:1px solid #eee;padding-top:3px;margin-top:3px"><span><b>Considerado</b></span><span><b style="font-size:13px">${fmtR(dados.lucroMeta)}</b></span></div>
+  <div class="cli-row"><span>Média por dia útil</span><span>${fmtR(dados.mediaLucroRecebidoDiaUtil)}</span></div>
+  ${metaBox}
+
+  ${linhasCustos ? `<div class="sec">Custos do Mês</div><table><tbody>${linhasCustos}</tbody></table>` : ""}
+
+  ${linhasRank ? `<div class="sec">Top ${dados.rank.length} Serviços/Produtos</div><table><thead><tr><th>Serviço</th><th style="text-align:center;width:36px">Qtd</th><th style="text-align:right;width:80px">Lucro</th></tr></thead><tbody>${linhasRank}</tbody></table>` : ""}
+
+  <div class="tot"><span>Faturamento Total</span><span>${fmtR(dados.totalRecebido)}</span></div>
+
+  <div class="thanks">Fechamento gerado automaticamente pelo sistema.</div>
+  <div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
+  <div class="foot">
+    <div><b>Fale conosco</b><br>(11) 9.3922-8558</div>
+    <div><b>Qualidade e confiança</b><br>Compromisso com o seu veículo</div>
+  </div>
+</div>
+</body></html>`;
+
+  const htmlShare = html.replace('<body>', '<body class="share-mode">');
+  const htmlPreview = htmlShare;
+
+  const loadScript = (src) => new Promise((res,rej)=>{
+    if (document.querySelector('script[src="'+src+'"]')) { res(); return; }
+    const s = document.createElement("script");
+    s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error("Falha ao carregar biblioteca (sem internet ou CDN bloqueado)"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
+  });
+
+  const obterLarguraPreview = () => {
+    const frame = previewFrameRef.current;
+    if (frame) {
+      const rect = frame.getBoundingClientRect();
+      if (rect.width) return Math.round(rect.width);
+    }
+    return Math.round(window.innerWidth || 420);
+  };
+
+  const aguardarImagens = async (doc) => {
+    const imgs = Array.from(doc.images || []);
+    await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    })));
+  };
+
+  const capturarDocumento = async (largura) => {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const larguraFinal = Math.round(largura);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(htmlShare);
+    doc.close();
+
+    doc.documentElement.style.width = larguraFinal+"px";
+    doc.body.style.width = larguraFinal+"px";
+    doc.body.style.margin = "0";
+
+    await aguardarImagens(doc);
+    await new Promise(r=>setTimeout(r,300));
+
+    const alturaFinal = Math.ceil(doc.body.scrollHeight);
+    iframe.style.height = alturaFinal+"px";
+
+    const canvas = await window.html2canvas(doc.body, {
+      scale:2, useCORS:true, allowTaint:true,
+      windowWidth:larguraFinal, width:larguraFinal, height:alturaFinal,
+      backgroundColor:"#ffffff"
+    });
+    document.body.removeChild(iframe);
+    return canvas;
+  };
+
+  const exportarImagem = async () => {
+    toast("Gerando imagem...");
+    try {
+      const largura = Math.min(Math.max(obterLarguraPreview(), 390), 520);
+      const canvas = await capturarDocumento(largura);
+      const nome = "Fechamento_"+dados.mes+"_"+dados.ano+".png";
+      const blob = await new Promise(res => canvas.toBlob(res,"image/png",1.0));
+      const file = new File([blob], nome, {type:"image/png"});
+
+      if (navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
+        await navigator.share({
+          files:[file],
+          title:"Fechamento Mensal — "+dados.mes+"/"+dados.ano,
+          text:"Fechamento do mês de "+dados.mes+"/"+dados.ano
+        });
+        return;
+      }
+      const link = document.createElement("a");
+      link.download = nome;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast("Imagem salva nos downloads.");
+    } catch(e) {
+      if (e.name!=="AbortError") alert("Erro ao compartilhar imagem: "+e.message);
+    }
+  };
+
+  const imprimir = () => {
+    const w = window.open("","_blank","width=800,height=600");
+    w.document.write(html); w.document.close(); w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:300,
+      display:"flex",flexDirection:"column"}}>
+      <button onClick={onClose} aria-label="Fechar prévia" style={{position:"absolute",top:10,right:10,zIndex:2,
+        width:38,height:38,borderRadius:19,border:"1px solid rgba(255,255,255,.25)",
+        background:"rgba(15,23,42,.82)",color:"#fff",fontSize:22,lineHeight:"34px",cursor:"pointer"}}>×</button>
+      <div style={{flex:1,overflow:"hidden",background:"#fff"}}>
+        <iframe ref={previewFrameRef} srcDoc={htmlPreview} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia Fechamento Mensal" />
+      </div>
+      <div style={{background:T.surface,borderTop:"1px solid "+T.border,
+        padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
+        flexWrap:"wrap",flexShrink:0}}>
+        <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
+        <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
+      </div>
+      <div style={{marginTop:8,fontSize:11,color:T.muted,textAlign:"center"}}>
+        ⚠️ Compartilhamento direto funciona após hospedar o app. Por enquanto salva nos downloads.
+      </div>
+    </div>
+  );
+}
+
 function AbaOrdens({ nivelAcesso }) {
   const isAdmin = nivelAcesso === "admin";
   const [ordens, setOrdens] = useState(()=>db.get(K.ordens));
@@ -3013,6 +3217,7 @@ function AbaAnalise(){
   const [servicosChaveTexto, setServicosChaveTexto] = useState(
     getConfig().servicosChave || "Carga de Gás"
   );
+  const [fechamentoMesAberto, setFechamentoMesAberto] = useState(false);
 
   const navMes = (dir) => {
     setPeriodo(p => {
@@ -3126,6 +3331,14 @@ function AbaAnalise(){
     const chaves = servicosChaveTexto.split(",").map(s=>s.trim()).filter(Boolean);
     const contagemChave = contarServicosChave(comValor, chaves);
 
+    const dadosFechamentoMes = {
+      mes: MESES_F[periodo.m], ano: periodo.a,
+      qtdOS: comValor.length, totalRecebido: totalFat, lucroMedio,
+      totalTaxas, totalDescontos, totalCustoPecas, totalOutrosCustos,
+      lucroReal, lucroAdiantamentos, lucroMeta, mediaLucroRecebidoDiaUtil,
+      metaAcumulada, percMeta, rank,
+    };
+
     return (
       <div style={{padding:4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
@@ -3140,6 +3353,8 @@ function AbaAnalise(){
           <button onClick={()=>navMes(1)} style={{background:"none",border:"none",
             color:T.text,cursor:"pointer",fontSize:22}}>›</button>
         </div>
+
+        <Btn v="orange" full onClick={()=>setFechamentoMesAberto(true)} style={{marginBottom:8}}>📤 Fechamento do Mês</Btn>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
           {[
@@ -3302,6 +3517,8 @@ function AbaAnalise(){
             })}
           </div>
         )}
+
+        {fechamentoMesAberto && <ModalFechamentoMes dados={dadosFechamentoMes} onClose={()=>setFechamentoMesAberto(false)} />}
       </div>
     );
   } catch(e) {
