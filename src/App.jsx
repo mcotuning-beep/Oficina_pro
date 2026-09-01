@@ -1986,7 +1986,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
-        <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>👁 Prévia</Btn>
+        <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>📤 Compartilhar</Btn>
         {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{
           const final = salvarLocal();
           if(!final) return;
