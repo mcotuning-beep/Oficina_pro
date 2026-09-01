@@ -937,7 +937,7 @@ ${os.tipo !== "Orçamento" ? `<div class="warranty-box">
 </div>` : ""}
 
 ${os.tipo !== "Orçamento" ? `<div class="info-grid">
-  <div class="info-card"><div class="info-title">Forma de pagamento</div><div class="info-value">${formaPagamentoTexto}</div></div>
+  ${(os.pagamentos||[]).length ? `<div class="info-card"><div class="info-title">Forma de pagamento</div><div class="info-value">${formaPagamentoTexto}</div></div>` : ""}
   <div class="info-card"><div class="info-title">Data da conclusão</div><div class="info-value">${dataConclusaoTexto}</div></div>
 </div>` : ""}
 
