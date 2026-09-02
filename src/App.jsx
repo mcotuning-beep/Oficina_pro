@@ -40,7 +40,8 @@ const ordFromDb = r => ({
   servicos:r.servicos, observacao:r.observacao, maoDeObra:r.mao_de_obra, desconto:r.desconto,
   totalBruto:r.total_bruto, totalLiquido:r.total_liquido, totalTaxas:r.total_taxas,
   custoPecas:r.custo_pecas, outrosCustos:r.outros_custos, origem:r.origem, fechadoEm:r.fechado_em,
-  lucroReal:r.lucro_real, margemReal:r.margem_real,
+  ...(r.lucro_real!=null ? {lucroReal:r.lucro_real} : {}),
+  ...(r.margem_real!=null ? {margemReal:r.margem_real} : {}),
   itens:r.itens||[], pagamentos:r.pagamentos||[],
 });
 const veiToDb = r => ({ id:r.id, placa:r.placa||null, modelo:r.modelo||null, ano:r.ano||null, cliente_id:r.clienteId||null });
