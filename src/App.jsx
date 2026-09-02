@@ -38,7 +38,9 @@ const contarServicosChave = (ordens, chaves) => {
       if (itensMatch.length) {
         itensMatch.forEach(i => {
           mapa[chave].count += 1;
-          mapa[chave].valor += parseFloat(i.venda||0) * (parseFloat(i.qty||1) || 1);
+          const qty = parseFloat(i.qty||1) || 1;
+          const lucroItem = (parseFloat(i.venda||0) - parseFloat(i.custo||0)) * qty;
+          mapa[chave].valor += lucroItem;
         });
       } else if (textoLivre.includes(chave)) {
         // Achou a palavra-chave no texto da OS (ex: "manutenção no compressor e carga de gás")
@@ -3473,8 +3475,8 @@ function AbaAnalise(){
         <div style={{background:T.card,border:"1px solid "+T.accent+"44",borderRadius:12,padding:12,marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:8}}>
             <div>
-              <div style={{fontSize:11,color:T.accent,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Serviços-chave (contagem)</div>
-              <div style={{fontSize:10,color:T.muted}}>Conta quantas vezes um serviço apareceu, mesmo dentro de OS com outros serviços juntos.</div>
+              <div style={{fontSize:11,color:T.accent,fontWeight:800,textTransform:"uppercase",letterSpacing:.8}}>🎯 Serviços-chave (contagem • 💰 lucro)</div>
+              <div style={{fontSize:10,color:T.muted}}>Conta quantas vezes um serviço apareceu, mesmo dentro de OS com outros serviços juntos. O valor mostrado é o lucro (venda − custo), igual ao Ranking abaixo.</div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
@@ -3513,7 +3515,7 @@ function AbaAnalise(){
           </div>
         ) : (
           <div style={{display:"grid",gap:8}}>
-            <div style={{fontSize:13,fontWeight:800,color:T.text}}>🏆 Ranking de Serviços</div>
+            <div style={{fontSize:13,fontWeight:800,color:T.text}}>🏆 Ranking de Serviços (💰 lucro, top 5)</div>
             {rank.map((r,i) => {
               const pct = totalFat > 0 ? (r.total/totalFat*100).toFixed(0) : 0;
               const bar = (r.total/maxV*100).toFixed(0);
