@@ -1073,7 +1073,7 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
 
 <div class="tot"><span>Total</span><span>R$ ${total.toFixed(2).replace(".",",")}</span></div>
 
-${os.tipo !== "Orçamento" ? `<div class="warranty-box">
+${os.tipo !== "Orçamento" && garantiaValor > 0 ? `<div class="warranty-box">
   <div class="warranty-icon">🛡️</div>
   <div>
     <div class="warranty-title">Garantia</div>
