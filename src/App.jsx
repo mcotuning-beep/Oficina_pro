@@ -117,8 +117,21 @@ async function pullAll() {
     localStorage.setItem("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
     localStorage.setItem("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
     localStorage.setItem("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
-    localStorage.setItem("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
-    localStorage.setItem("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
+    // Salvaguarda: se a tabela remota ainda estiver vazia mas já existir algo salvo
+    // neste aparelho (ex.: taxas configuradas antes da migração), preserva o local
+    // e sobe ele pro Supabase, em vez de sobrescrever com vazio.
+    const localTax = db.get(K.taxas);
+    if ((tax.data||[]).length === 0 && localTax.length) {
+      await supabase.from("taxas").upsert(localTax.map(SYNC_TABLES.op_taxas.toDb));
+    } else {
+      localStorage.setItem("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
+    }
+    const localCmp = db.get(K.compras);
+    if ((cmp.data||[]).length === 0 && localCmp.length) {
+      await supabase.from("compras").upsert(localCmp.map(SYNC_TABLES.op_compras.toDb));
+    } else {
+      localStorage.setItem("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
+    }
     const agendaObj = {};
     (agd.data||[]).forEach(r=>{ try { agendaObj[r.id] = JSON.parse(r.texto); } catch { agendaObj[r.id] = r.texto; } });
     localStorage.setItem("op_agenda", JSON.stringify(agendaObj));
