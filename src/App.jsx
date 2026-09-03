@@ -1601,8 +1601,16 @@ const CHECKLIST_AVARIAS = [
   {k:"vidroTraseiro", l:"Vidro traseiro"},
   {k:"retrovisores", l:"Retrovisores"},
   {k:"rodasPneus", l:"Rodas / pneus"},
+  {k:"luzPainel", l:"Luz de avaria acesa no painel"},
 ];
 const COMBUSTIVEL_OPCOES = ["Reserva","1/4","1/2","3/4","Cheio"];
+
+const fmtDataHora = iso => {
+  if(!iso) return "-";
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("pt-BR") + " às " + d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+};
 
 function checklistPreenchida(cl){
   if(!cl) return false;
@@ -1618,6 +1626,7 @@ function ModalChecklistEntrada({ os, onSave, onClose }) {
   const [avarias, setAvarias] = useState(base.avarias || {});
   const [itensPessoais, setItensPessoais] = useState(base.itensPessoais || "");
   const [observacoes, setObservacoes] = useState(base.observacoes || "");
+  const [compartilharOpen, setCompartilharOpen] = useState(false);
 
   const toggleSeg = k => setSeguranca(s => ({...s, [k]: !s[k]}));
   const toggleAvaria = k => setAvarias(a => ({...a, [k]: {...(a[k]||{}), avariado: !(a[k]&&a[k].avariado)}}));
@@ -1630,6 +1639,9 @@ function ModalChecklistEntrada({ os, onSave, onClose }) {
 
   return <Modal title="🔍 Checklist de Entrada" onClose={onClose} w={620}>
     <div style={{display:"grid",gap:18}}>
+      {base.preenchidoEm && (
+        <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>🕐 Preenchida em {fmtDataHora(base.preenchidoEm)}</div>
+      )}
       <div>
         <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Itens de segurança presentes</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -1690,12 +1702,204 @@ function ModalChecklistEntrada({ os, onSave, onClose }) {
             padding:"9px 12px",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
       </div>
 
+      <Btn v="blue" onClick={()=>setCompartilharOpen(true)} full>📤 Compartilhar com cliente</Btn>
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
         <Btn v="green" onClick={salvar} full>💾 Salvar checklist</Btn>
       </div>
     </div>
+    {compartilharOpen && <ModalCompartilharChecklist os={os}
+      checklist={{ seguranca, combustivel, avarias, itensPessoais, observacoes, preenchidoEm: base.preenchidoEm || new Date().toISOString() }}
+      onClose={()=>setCompartilharOpen(false)} />}
   </Modal>;
+}
+
+function ModalCompartilharChecklist({ os, checklist, onClose }) {
+  const previewFrameRef = useRef(null);
+  const { seguranca, combustivel, avarias, itensPessoais, observacoes, preenchidoEm } = checklist;
+
+  const segurancaRows = CHECKLIST_SEGURANCA.map(item => `
+    <div class="chk-row"><span class="chk-mark ${seguranca[item.k]?"ok":"no"}">${seguranca[item.k]?"✓":"✗"}</span><span>${item.l}</span></div>`).join("");
+
+  const avariasMarcadas = CHECKLIST_AVARIAS.filter(item => avarias[item.k]?.avariado);
+  const avariasRows = avariasMarcadas.length
+    ? avariasMarcadas.map(item => `
+      <div class="dmg-row"><span class="dmg-mark">⚠️</span><span><b>${item.l}</b>${avarias[item.k]?.obs ? " — "+avarias[item.k].obs : ""}</span></div>`).join("")
+    : `<div style="color:#777;font-size:10px">Nenhuma avaria identificada.</div>`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Checklist de Entrada — OS #${os.numero}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:11px;line-height:1.4}
+body.share-mode{padding:10px}
+.doc-page{max-width:520px;margin:0 auto;background:#fff}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:10px}
+.enome{font-size:16px;font-weight:900}
+.enome span{color:#d97706}
+.edet{font-size:9px;color:#555;margin-top:3px;line-height:1.4}
+.os-box{border:1px solid #111;border-radius:6px;padding:6px 10px;text-align:right;font-size:11px}
+.sec{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:#d97706;margin:12px 0 6px}
+.cli-row{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:10px;margin-bottom:2px}
+.chk-row{display:flex;align-items:center;gap:6px;font-size:10px;padding:3px 0}
+.chk-mark{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;font-size:10px;font-weight:900;flex:0 0 auto}
+.chk-mark.ok{background:#dcfce7;color:#16a34a}
+.chk-mark.no{background:#f3f4f6;color:#999}
+.dmg-row{display:flex;align-items:flex-start;gap:6px;font-size:10px;padding:4px 0;border-bottom:1px solid #f3f4f6}
+.dmg-mark{flex:0 0 auto}
+.combustivel-box{display:inline-block;border:1px solid #111;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;margin-top:2px}
+.obs-box{background:#fffbeb;border-left:3px solid #d97706;padding:6px 10px;margin-top:4px;font-size:10px;line-height:1.4}
+.thanks{text-align:center;margin-top:16px;font-size:10px;color:#555}
+.brand-foot{text-align:center;font-weight:900;font-size:11px;margin-top:4px}
+.brand-foot span{color:#d97706}
+.foot{display:flex;justify-content:space-between;margin-top:10px;border-top:1px dashed #ddd;padding-top:8px;font-size:8.5px;color:#666}
+</style></head>
+<body>
+<div class="doc-page">
+  <div class="hdr">
+    <div>
+      <div class="enome">M.<span>SCARPEL</span></div>
+      <div class="edet">Serviços Automotivos<br>Av. Cachoeira 747 A3, Vila Pindorama, Barueri/SP<br>(11) 9.3922-8558 &nbsp;|&nbsp; CNPJ: 17.562.963/0001-81</div>
+    </div>
+    <div class="os-box">Checklist de<br><b>Entrada</b><br>OS #${String(os.numero||0).padStart(4,"0")}</div>
+  </div>
+
+  <div class="sec">Veículo</div>
+  <div class="cli-row"><span><b>${os.cliente||"-"}</b></span><span>${os.telefone||""}</span></div>
+  <div class="cli-row"><span>Placa: <b>${os.placa||"-"}</b></span><span>${os.veiculo||""} ${os.ano||""}</span><span>KM: ${os.km||"-"}</span></div>
+
+  <div class="sec">Itens de segurança presentes</div>
+  ${segurancaRows}
+
+  <div class="sec">Nível de combustível</div>
+  <div class="combustivel-box">${combustivel||"Não informado"}</div>
+
+  <div class="sec">Avarias identificadas</div>
+  ${avariasRows}
+
+  ${itensPessoais ? `<div class="sec">Itens pessoais no veículo</div><div class="obs-box">${itensPessoais}</div>` : ""}
+
+  ${observacoes ? `<div class="sec">Observações</div><div class="obs-box">${observacoes}</div>` : ""}
+
+  <div class="thanks">Preenchida em ${fmtDataHora(preenchidoEm)}</div>
+  <div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
+  <div class="foot">
+    <div><b>Fale conosco</b><br>(11) 9.3922-8558</div>
+    <div><b>Qualidade e confiança</b><br>Compromisso com o seu veículo</div>
+  </div>
+</div>
+</body></html>`;
+
+  const htmlShare = html.replace('<body>', '<body class="share-mode">');
+  const htmlPreview = htmlShare;
+
+  const loadScript = (src) => new Promise((res,rej)=>{
+    if (document.querySelector('script[src="'+src+'"]')) { res(); return; }
+    const s = document.createElement("script");
+    s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error("Falha ao carregar biblioteca (sem internet ou CDN bloqueado)"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
+  });
+
+  const obterLarguraPreview = () => {
+    const frame = previewFrameRef.current;
+    if (frame) {
+      const rect = frame.getBoundingClientRect();
+      if (rect.width) return Math.round(rect.width);
+    }
+    return Math.round(window.innerWidth || 420);
+  };
+
+  const aguardarImagens = async (doc) => {
+    const imgs = Array.from(doc.images || []);
+    await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    })));
+  };
+
+  const capturarDocumento = async (largura) => {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const larguraFinal = Math.round(largura);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+larguraFinal+"px;height:1px;border:none;background:#fff;";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(htmlShare);
+    doc.close();
+
+    doc.documentElement.style.width = larguraFinal+"px";
+    doc.body.style.width = larguraFinal+"px";
+    doc.body.style.margin = "0";
+
+    await aguardarImagens(doc);
+    await new Promise(r=>setTimeout(r,300));
+
+    const alturaFinal = Math.ceil(doc.body.scrollHeight);
+    iframe.style.height = alturaFinal+"px";
+
+    const canvas = await window.html2canvas(doc.body, {
+      scale:2, useCORS:true, allowTaint:true,
+      windowWidth:larguraFinal, width:larguraFinal, height:alturaFinal,
+      backgroundColor:"#ffffff"
+    });
+    document.body.removeChild(iframe);
+    return canvas;
+  };
+
+  const exportarImagem = async () => {
+    toast("Gerando imagem...");
+    try {
+      const largura = Math.min(Math.max(obterLarguraPreview(), 390), 520);
+      const canvas = await capturarDocumento(largura);
+      const nome = "Checklist_OS_"+String(os.numero||0).padStart(4,"0")+".png";
+      const blob = await new Promise(res => canvas.toBlob(res,"image/png",1.0));
+      const file = new File([blob], nome, {type:"image/png"});
+
+      if (navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
+        await navigator.share({
+          files:[file],
+          title:"Checklist de Entrada — OS #"+String(os.numero||0).padStart(4,"0"),
+          text:"Checklist de entrada do veículo — "+(os.cliente||"")
+        });
+        return;
+      }
+      const link = document.createElement("a");
+      link.download = nome;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast("Imagem salva nos downloads.");
+    } catch(e) {
+      if (e.name!=="AbortError") alert("Erro ao compartilhar imagem: "+e.message);
+    }
+  };
+
+  const imprimir = () => {
+    const w = window.open("","_blank","width=800,height=600");
+    w.document.write(html); w.document.close(); w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:400,
+      display:"flex",flexDirection:"column"}}>
+      <button onClick={onClose} aria-label="Fechar prévia" style={{position:"absolute",top:10,right:10,zIndex:2,
+        width:38,height:38,borderRadius:19,border:"1px solid rgba(255,255,255,.25)",
+        background:"rgba(15,23,42,.82)",color:"#fff",fontSize:22,lineHeight:"34px",cursor:"pointer"}}>×</button>
+      <div style={{flex:1,overflow:"hidden",background:"#fff"}}>
+        <iframe ref={previewFrameRef} srcDoc={htmlPreview} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Prévia Checklist" />
+      </div>
+      <div style={{background:T.surface,borderTop:"1px solid "+T.border,
+        padding:"10px 14px",display:"flex",gap:8,justifyContent:"stretch",
+        flexWrap:"wrap",flexShrink:0}}>
+        <Btn v="blue" onClick={imprimir}>🖨️ Impressora</Btn>
+        <Btn v="orange" onClick={exportarImagem}>📤 Compartilhar</Btn>
+      </div>
+    </div>
+  );
 }
 
 function ModalDadosPagamento({ onSave, onClose }) {
