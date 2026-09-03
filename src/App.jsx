@@ -1572,6 +1572,10 @@ function ModalDadosFiscais({ os, onSave, onClose }) {
         <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
         <Btn v="green" onClick={salvarFiscal} full>💾 Salvar dados fiscais</Btn>
       </div>
+      <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>Esses dados são usados somente para o PDF Fiscal/Contadora.</div>
+    </div>
+  </Modal>;
+}
 
 
 // ── CHECKLIST DE ENTRADA (vistoria do veículo ao chegar na oficina) ───────────
