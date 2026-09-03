@@ -31,7 +31,7 @@ const ordToDb = o => ({
   servicos:o.servicos||null, observacao:o.observacao||null, mao_de_obra:o.maoDeObra||null, desconto:o.desconto||null,
   total_bruto:o.totalBruto ?? null, total_liquido:o.totalLiquido ?? null, total_taxas:o.totalTaxas ?? null,
   custo_pecas:o.custoPecas ?? null, outros_custos:o.outrosCustos ?? null, origem:o.origem||null, fechado_em:o.fechadoEm||null,
-  lucro_real:o.lucroReal ?? null, margem_real:o.margemReal ?? null,
+  lucro_real:o.lucroReal ?? null, margem_real:o.margemReal ?? null, checklist:o.checklist ?? null,
   itens:o.itens||[], pagamentos:o.pagamentos||[],
 });
 const ordFromDb = r => ({
@@ -42,6 +42,7 @@ const ordFromDb = r => ({
   custoPecas:r.custo_pecas, outrosCustos:r.outros_custos, origem:r.origem, fechadoEm:r.fechado_em,
   ...(r.lucro_real!=null ? {lucroReal:r.lucro_real} : {}),
   ...(r.margem_real!=null ? {margemReal:r.margem_real} : {}),
+  ...(r.checklist!=null ? {checklist:r.checklist} : {}),
   itens:r.itens||[], pagamentos:r.pagamentos||[],
 });
 const veiToDb = r => ({ id:r.id, placa:r.placa||null, modelo:r.modelo||null, ano:r.ano||null, cliente_id:r.clienteId||null });
@@ -1571,7 +1572,124 @@ function ModalDadosFiscais({ os, onSave, onClose }) {
         <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
         <Btn v="green" onClick={salvarFiscal} full>💾 Salvar dados fiscais</Btn>
       </div>
-      <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>Esses dados são usados somente para o PDF Fiscal/Contadora.</div>
+
+
+// ── CHECKLIST DE ENTRADA (vistoria do veículo ao chegar na oficina) ───────────
+
+const CHECKLIST_SEGURANCA = [
+  {k:"estepe", l:"Estepe"},
+  {k:"macaco", l:"Macaco"},
+  {k:"chaveRoda", l:"Chave de roda"},
+  {k:"triangulo", l:"Triângulo"},
+  {k:"chaveReserva", l:"Chave reserva"},
+  {k:"documento", l:"Documento do veículo"},
+];
+const CHECKLIST_AVARIAS = [
+  {k:"paraChoqueDianteiro", l:"Para-choque dianteiro"},
+  {k:"paraChoqueTraseiro", l:"Para-choque traseiro"},
+  {k:"capo", l:"Capô"},
+  {k:"teto", l:"Teto"},
+  {k:"portaDE", l:"Porta dianteira esquerda"},
+  {k:"portaDD", l:"Porta dianteira direita"},
+  {k:"portaTE", l:"Porta traseira esquerda"},
+  {k:"portaTD", l:"Porta traseira direita"},
+  {k:"paraBrisa", l:"Para-brisa"},
+  {k:"vidroTraseiro", l:"Vidro traseiro"},
+  {k:"retrovisores", l:"Retrovisores"},
+  {k:"rodasPneus", l:"Rodas / pneus"},
+];
+const COMBUSTIVEL_OPCOES = ["Reserva","1/4","1/2","3/4","Cheio"];
+
+function checklistPreenchida(cl){
+  if(!cl) return false;
+  const seg = Object.values(cl.seguranca||{}).some(Boolean);
+  const av = Object.values(cl.avarias||{}).some(a=>a && (a.avariado || a.obs));
+  return seg || !!cl.combustivel || av || !!cl.itensPessoais || !!cl.observacoes;
+}
+
+function ModalChecklistEntrada({ os, onSave, onClose }) {
+  const base = os.checklist || {};
+  const [seguranca, setSeguranca] = useState(base.seguranca || {});
+  const [combustivel, setCombustivel] = useState(base.combustivel || "");
+  const [avarias, setAvarias] = useState(base.avarias || {});
+  const [itensPessoais, setItensPessoais] = useState(base.itensPessoais || "");
+  const [observacoes, setObservacoes] = useState(base.observacoes || "");
+
+  const toggleSeg = k => setSeguranca(s => ({...s, [k]: !s[k]}));
+  const toggleAvaria = k => setAvarias(a => ({...a, [k]: {...(a[k]||{}), avariado: !(a[k]&&a[k].avariado)}}));
+  const setAvariaObs = (k,v) => setAvarias(a => ({...a, [k]: {...(a[k]||{}), obs:v}}));
+
+  const salvar = () => {
+    onSave({ seguranca, combustivel, avarias, itensPessoais, observacoes, preenchidoEm: new Date().toISOString() });
+    toast("Checklist de entrada salva!");
+  };
+
+  return <Modal title="🔍 Checklist de Entrada" onClose={onClose} w={620}>
+    <div style={{display:"grid",gap:18}}>
+      <div>
+        <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Itens de segurança presentes</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {CHECKLIST_SEGURANCA.map(item => (
+            <div key={item.k} onClick={()=>toggleSeg(item.k)}
+              style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,
+                border:"1px solid "+(seguranca[item.k]?T.green:T.border),
+                background:seguranca[item.k]?T.greenLo:T.bg,cursor:"pointer",userSelect:"none"}}>
+              <input type="checkbox" checked={!!seguranca[item.k]} readOnly style={{accentColor:T.green,width:16,height:16,pointerEvents:"none"}}/>
+              <span style={{fontSize:12.5,color:T.text}}>{item.l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Nível de combustível</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {COMBUSTIVEL_OPCOES.map(op => (
+            <Btn key={op} v={combustivel===op?"blue":"ghost"} sz="sm" onClick={()=>setCombustivel(op)}>{op}</Btn>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Avarias na lataria / vidros</div>
+        <div style={{display:"grid",gap:6}}>
+          {CHECKLIST_AVARIAS.map(item => {
+            const av = avarias[item.k]||{};
+            return (
+              <div key={item.k} style={{border:"1px solid "+(av.avariado?T.red:T.border),borderRadius:8,
+                background:av.avariado?T.redLo:T.bg,padding:"8px 10px"}}>
+                <div onClick={()=>toggleAvaria(item.k)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                  <input type="checkbox" checked={!!av.avariado} readOnly style={{accentColor:T.red,width:16,height:16,pointerEvents:"none"}}/>
+                  <span style={{fontSize:12.5,color:T.text,flex:1}}>{item.l}</span>
+                  {av.avariado && <span style={{fontSize:10,color:T.red,fontWeight:700}}>AVARIADO</span>}
+                </div>
+                {av.avariado && (
+                  <input value={av.obs||""} onChange={e=>setAvariaObs(item.k,e.target.value)}
+                    placeholder="Descreva a avaria (opcional)"
+                    style={{marginTop:6,width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:6,
+                      color:T.text,padding:"6px 9px",fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <Inp label="Itens pessoais deixados no veículo" value={itensPessoais} onChange={setItensPessoais}
+        placeholder="Ex: óculos no porta-luvas, bolsa no banco traseiro..." />
+
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>Observações gerais</label>
+        <textarea value={observacoes} onChange={e=>setObservacoes(e.target.value)} rows={3}
+          placeholder="Barulhos, avisos do painel, combinados com o cliente..."
+          style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,
+            padding:"9px 12px",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>
+        <Btn v="green" onClick={salvar} full>💾 Salvar checklist</Btn>
+      </div>
     </div>
   </Modal>;
 }
@@ -1676,6 +1794,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
   const [fiscalOpen, setFiscalOpen] = useState(false);
+  const [checklistOpen, setChecklistOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
   const [opcoesPagamentoOpen, setOpcoesPagamentoOpen] = useState(false);
   const isAdmin = nivelAcesso === "admin";
@@ -1893,6 +2012,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
             fontFamily:"inherit",colorScheme:"dark",boxSizing:"border-box"}}/>
         </div>
         {isAdmin && <Btn v="blue" onClick={()=>setFiscalOpen(true)} full>📋 Dados completos / Fiscal</Btn>}
+        <Btn v="orange" onClick={()=>setChecklistOpen(true)} full>{checklistPreenchida(os.checklist) ? "✅ Checklist de Entrada preenchida" : "🔍 Checklist de Entrada"}</Btn>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input type="checkbox" checked={os.incluirDadosPagamento||false} onChange={e=>upd("incluirDadosPagamento",e.target.checked)}
             style={{width:18,height:18,cursor:"pointer",accentColor:T.green}} />
@@ -2151,6 +2271,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
       {modalProd && <ModalNovoProduto nome={modalProd} onClose={()=>setModalProd(null)} onSave={p=>{setModalProd(null);addProduto(p);}} />}
       {previaOpen && <ModalImpressao os={os} onClose={()=>setPreviaOpen(false)} />}
       {fiscalOpen && <ModalDadosFiscais os={os} onClose={()=>setFiscalOpen(false)} onSave={f=>{setOs(o=>({...o,fiscal:f}));setFiscalOpen(false);}} />}
+      {checklistOpen && <ModalChecklistEntrada os={os} onClose={()=>setChecklistOpen(false)} onSave={c=>{setOs(o=>({...o,checklist:c}));setChecklistOpen(false);}} />}
       {dadosPagamentoOpen && <ModalDadosPagamento onSave={()=>setDadosPagamentoOpen(false)} onClose={()=>setDadosPagamentoOpen(false)} />}
       {opcoesPagamentoOpen && <ModalOpcoesPagamento onClose={()=>setOpcoesPagamentoOpen(false)} />}
       {pagtoOpen && <ModalPagamento os={os} onClose={()=>setPagtoOpen(false)}
