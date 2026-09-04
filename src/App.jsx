@@ -88,6 +88,30 @@ async function pushSync(key, cfg, oldStr, newStr) {
   }
 }
 
+// ── Fila de pendências (evita perder dados quando a internet cai) ─────────
+// Guarda, por chave (op_ord, op_cli, ...), o par {oldStr,newStr} da última
+// gravação que NÃO conseguiu confirmar no Supabase. Enquanto existir uma
+// pendência pra uma chave, pullAll() nunca sobrescreve aquela chave com os
+// dados remotos (que ainda não têm a mudança) — isso evita que uma OS criada
+// offline (ou com falha de rede) seja apagada na próxima atualização de tela.
+const OUTBOX_KEY = "__op_outbox__";
+const getOutbox = () => { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY)||"{}"); } catch { return {}; } };
+let _syncOffline = false;
+const notifySyncStatus = pendingCount => {
+  const offline = pendingCount > 0;
+  if (offline === _syncOffline) return;
+  _syncOffline = offline;
+  if (offline) toast("Sem conexão — o que você salvar fica guardado no aparelho e sincroniza sozinho quando a internet voltar.");
+  else toast("Conectado! Sincronizando com o servidor...");
+};
+const setOutboxEntry = (key, oldStr, newStr) => {
+  const ob = getOutbox();
+  if (newStr === null) { delete ob[key]; }
+  else { const existing = ob[key]; ob[key] = { oldStr: existing ? existing.oldStr : oldStr, newStr }; }
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(ob));
+  notifySyncStatus(Object.keys(ob).length);
+};
+
 (function installSync(){
   const originalSetItem = Storage.prototype.setItem;
   Storage.prototype.setItem = function(key, value) {
@@ -96,13 +120,39 @@ async function pushSync(key, cfg, oldStr, newStr) {
     if (this !== localStorage || SYNC_PAUSED) return;
     const cfg = SYNC_TABLES[key];
     if (!cfg) return;
-    pushSync(key, cfg, oldValue, value).catch(e => console.error("[sync]", key, e));
+    pushSync(key, cfg, oldValue, value)
+      .then(() => setOutboxEntry(key, null, null))
+      .catch(e => { console.error("[sync]", key, e); setOutboxEntry(key, oldValue, value); });
   };
+  const flushOutbox = () => {
+    const ob = getOutbox();
+    Object.keys(ob).forEach(key => {
+      const cfg = SYNC_TABLES[key];
+      if (!cfg) { setOutboxEntry(key, null, null); return; }
+      pushSync(key, cfg, ob[key].oldStr, ob[key].newStr)
+        .then(() => setOutboxEntry(key, null, null))
+        .catch(e => console.error("[sync-retry]", key, e));
+    });
+  };
+  window.addEventListener("online", flushOutbox);
+  setInterval(flushOutbox, 15000);
 })();
 
 async function pullAll() {
   SYNC_PAUSED = true;
   try {
+    // Antes de puxar do servidor, tenta subir o que ainda estiver pendente
+    // neste aparelho — assim uma reconexão já sincroniza o que faltava antes
+    // de decidir se sobrescreve algo.
+    const outboxBefore = getOutbox();
+    for (const key of Object.keys(outboxBefore)) {
+      const cfg = SYNC_TABLES[key];
+      if (!cfg) continue;
+      try {
+        await pushSync(key, cfg, outboxBefore[key].oldStr, outboxBefore[key].newStr);
+        setOutboxEntry(key, null, null);
+      } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
+    }
     const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
@@ -115,10 +165,14 @@ async function pullAll() {
       supabase.from("config").select("*").eq("chave","opcoes_pagamento").maybeSingle(),
       supabase.from("dados_pagamento").select("*").eq("id",1).maybeSingle(),
     ]);
-    localStorage.setItem("op_cli", JSON.stringify((cli.data||[]).map(SYNC_TABLES.op_cli.fromDb)));
-    localStorage.setItem("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
-    localStorage.setItem("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
-    localStorage.setItem("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
+    // Ainda pendente depois da tentativa de flush acima: mantém o que está
+    // salvo no aparelho em vez de sobrescrever com dados remotos incompletos.
+    const outbox = getOutbox();
+    const applyIfNotPending = (key, jsonStr) => { if (!outbox[key]) localStorage.setItem(key, jsonStr); };
+    applyIfNotPending("op_cli", JSON.stringify((cli.data||[]).map(SYNC_TABLES.op_cli.fromDb)));
+    applyIfNotPending("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
+    applyIfNotPending("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
+    applyIfNotPending("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
     // Salvaguarda: se a tabela remota ainda estiver vazia mas já existir algo salvo
     // neste aparelho (ex.: taxas configuradas antes da migração), preserva o local
     // e sobe ele pro Supabase, em vez de sobrescrever com vazio.
@@ -126,20 +180,20 @@ async function pullAll() {
     if ((tax.data||[]).length === 0 && localTax.length) {
       await supabase.from("taxas").upsert(localTax.map(SYNC_TABLES.op_taxas.toDb));
     } else {
-      localStorage.setItem("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
+      applyIfNotPending("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
     }
     const localCmp = db.get(K.compras);
     if ((cmp.data||[]).length === 0 && localCmp.length) {
       await supabase.from("compras").upsert(localCmp.map(SYNC_TABLES.op_compras.toDb));
     } else {
-      localStorage.setItem("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
+      applyIfNotPending("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
     }
     const agendaObj = {};
     (agd.data||[]).forEach(r=>{ try { agendaObj[r.id] = JSON.parse(r.texto); } catch { agendaObj[r.id] = r.texto; } });
-    localStorage.setItem("op_agenda", JSON.stringify(agendaObj));
-    localStorage.setItem("op_config", JSON.stringify((cfgGeral.data && cfgGeral.data.valor) || {}));
-    localStorage.setItem("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
-    localStorage.setItem("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
+    applyIfNotPending("op_agenda", JSON.stringify(agendaObj));
+    applyIfNotPending("op_config", JSON.stringify((cfgGeral.data && cfgGeral.data.valor) || {}));
+    applyIfNotPending("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
+    applyIfNotPending("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
   } finally {
     SYNC_PAUSED = false;
   }
