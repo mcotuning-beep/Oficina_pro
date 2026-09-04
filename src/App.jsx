@@ -62,6 +62,12 @@ const SYNC_TABLES = {
   op_agenda:      { table:"agenda", kind:"keyed" },
 };
 
+// O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
+// (token expirado, RLS, etc.) — ele só devolve { error: ... } na resposta.
+// Por isso todo await abaixo passa por checkRes(), senão uma falha real
+// passaria despercebida como se tivesse sincronizado com sucesso.
+const checkRes = res => { if (res && res.error) throw res.error; return res; };
+
 async function pushSync(key, cfg, oldStr, newStr) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
@@ -70,12 +76,12 @@ async function pushSync(key, cfg, oldStr, newStr) {
     const newIds = new Set(newArr.map(r=>r.id));
     const removed = oldArr.map(r=>r.id).filter(id=>!newIds.has(id));
     const rows = newArr.filter(r=>r && r.id).map(cfg.toDb);
-    if (rows.length) await supabase.from(cfg.table).upsert(rows);
-    if (removed.length) await supabase.from(cfg.table).delete().in("id", removed);
+    if (rows.length) checkRes(await supabase.from(cfg.table).upsert(rows));
+    if (removed.length) checkRes(await supabase.from(cfg.table).delete().in("id", removed));
   } else if (cfg.kind === "row") {
-    await supabase.from(cfg.table).upsert({ chave: cfg.chave, valor: safeParseObj(newStr) });
+    checkRes(await supabase.from(cfg.table).upsert({ chave: cfg.chave, valor: safeParseObj(newStr) }));
   } else if (cfg.kind === "id1") {
-    await supabase.from(cfg.table).upsert({ id: 1, dados: safeParseObj(newStr) });
+    checkRes(await supabase.from(cfg.table).upsert({ id: 1, dados: safeParseObj(newStr) }));
   } else if (cfg.kind === "keyed") {
     const oldObj = safeParseObj(oldStr), newObj = safeParseObj(newStr);
     const removed = Object.keys(oldObj).filter(k=>!(k in newObj));
@@ -83,8 +89,8 @@ async function pushSync(key, cfg, oldStr, newStr) {
       const v = newObj[k];
       return { id:k, data:k.split("_")[0], texto: typeof v === "string" ? v : JSON.stringify(v) };
     });
-    if (rows.length) await supabase.from(cfg.table).upsert(rows);
-    if (removed.length) await supabase.from(cfg.table).delete().in("id", removed);
+    if (rows.length) checkRes(await supabase.from(cfg.table).upsert(rows));
+    if (removed.length) checkRes(await supabase.from(cfg.table).delete().in("id", removed));
   }
 }
 
