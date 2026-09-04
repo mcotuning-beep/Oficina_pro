@@ -2269,7 +2269,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
                   onMouseOver={e=>e.currentTarget.style.background=T.card}
                   onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                   <span>{p.nome} <span style={{fontSize:11,color:T.muted}}>{p.referencia}</span></span>
-                  <span style={{color:T.green,fontWeight:700}}>{fmtBRL(p.venda)}</span>
+                  {isAdmin && <span style={{color:T.green,fontWeight:700}}>{fmtBRL(p.venda)}</span>}
                 </div>
               ))}
               <div onClick={()=>setModalProd(buscaProd)}
@@ -2298,7 +2298,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
                     style={{background:T.redLo,border:"none",borderRadius:6,color:T.red,
                       cursor:"pointer",padding:"4px 8px",fontSize:12,marginLeft:8,flexShrink:0}}>✕</button>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                <div style={{display:"grid",gridTemplateColumns:isAdmin?"1fr 1fr 1fr":"120px",gap:6}}>
                   <div>
                     <div style={{fontSize:10,color:T.muted,marginBottom:2}}>QTD</div>
                     <input type="number" value={item.qty} min={1}
@@ -2314,21 +2314,21 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
                       style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:6,
                         color:T.text,padding:"6px",fontSize:13,fontFamily:"inherit",textAlign:"center",boxSizing:"border-box"}} />
                   </div>
-                  <div>
+                  {isAdmin && <div>
                     <div style={{fontSize:10,color:T.muted,marginBottom:2}}>CUSTO (R$)</div>
                     <input type="number" value={item.custo} onChange={e=>updItem(item.id,"custo",e.target.value)}
                       style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:6,
                         color:T.muted,padding:"6px",fontSize:13,fontFamily:"inherit",textAlign:"right",boxSizing:"border-box"}} />
-                  </div>
-                  <div>
+                  </div>}
+                  {isAdmin && <div>
                     <div style={{fontSize:10,color:T.green,marginBottom:2}}>VENDA UNIT. (R$)</div>
                     <input type="number" value={item.venda} onChange={e=>updItem(item.id,"venda",e.target.value)}
                       style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:6,
                         color:T.green,padding:"6px",fontSize:13,fontFamily:"inherit",textAlign:"right",
                         fontWeight:700,boxSizing:"border-box"}} />
-                  </div>
+                  </div>}
                 </div>
-                {parseInt(item.qty||1)>1&&(
+                {isAdmin && parseInt(item.qty||1)>1&&(
                   <div style={{textAlign:"right",marginTop:6,fontSize:12,color:T.green,fontWeight:700}}>
                     Subtotal ({item.qty}x): {(parseFloat(item.venda||0)*parseInt(item.qty||1)).toFixed(2).replace(".",",")}
                   </div>
@@ -2339,14 +2339,14 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
         )}
       </div>
 
-      <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
+      {isAdmin && <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:4}}>
           <span style={{fontSize:12,color:T.muted}}>Peças: {fmtBRL(os.itens.reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0))}</span>
           <span style={{fontSize:20,fontWeight:900,color:T.green}}>Total: {fmtBRL(total)}</span>
         </div>
-      </div>
+      </div>}
 
-      {os.pagamentos?.length>0 && (()=>{
+      {isAdmin && os.pagamentos?.length>0 && (()=>{
         const pago = calcTotalPago(os);
         const saldo = calcSaldoOS(os);
         const parcial = os.status !== "Concluída" && saldo > 0.009;
@@ -3217,7 +3217,7 @@ function AbaOrdens({ nivelAcesso }) {
                         style={{background:T.blueLo,border:"none",borderRadius:6,color:T.blue,
                           cursor:"pointer",padding:"5px 8px",fontSize:12,fontWeight:600}}>🖨️</button>
                     </div>
-                    {temAdiantamento&&(
+                    {isAdmin && temAdiantamento&&(
                       <div style={{display:"grid",gap:2,background:T.accentLo,border:"1px solid "+T.accent+"44",borderRadius:8,padding:"5px 8px",fontSize:10,fontWeight:800,textAlign:"right",lineHeight:1.15,minWidth:118}}>
                         <span style={{color:T.accent}}>💳 Deu {fmtBRL(totalPago)}</span>
                         <span style={{color:T.red}}>Falta {fmtBRL(saldoPendente)}</span>
@@ -4094,8 +4094,8 @@ export default function App() {
   const isAdmin = usuario.nivel==="admin";
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
+    {id:"compras",icon:"🛒",label:"Compras"},
     ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"}] : []),
-    ...(usuario.nivel!=="mecanico" ? [{id:"compras",icon:"🛒",label:"Compras"}] : []),
     ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
