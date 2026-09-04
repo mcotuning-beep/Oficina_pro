@@ -2461,13 +2461,9 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
         {onClose && <Btn v="ghost" onClick={onClose} full>Cancelar</Btn>}
         <Btn v="ghost" onClick={()=>{salvarLocal();setPreviaOpen(true);}} full>📤 Compartilhar</Btn>
-        {os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{
+        {isAdmin && os.tipo !== "Orçamento" && <Btn v="orange" onClick={()=>{
           const final = salvarLocal();
           if(!final) return;
-          if(!isAdmin){
-            const senhaMaster = window.prompt("Digite a senha master para fechamento da OS:");
-            if(senhaMaster !== ADMIN_ACCESS_PASSWORD){ toast("Senha master incorreta."); return; }
-          }
           setPagtoOpen(true);
         }} full>{calcSaldoOS(os)>0.009&&os.pagamentos?.length?"💰 Pgto/Saldo":"💳 Fechar Pgto"}</Btn>}
         <Btn onClick={()=>salvar()} full>💾 Salvar OS</Btn>
