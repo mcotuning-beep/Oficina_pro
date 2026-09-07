@@ -449,7 +449,7 @@
   <div class="grid" id="grid"></div>
 
   <div class="removal-note">
-    Se o carro já tem película instalada, cobramos <strong style="color:var(--text-dim)">R$ 100,00</strong> pela remoção do material antigo e limpeza profunda dos vidros antes da nova aplicação.
+    Se o carro já tem película instalada, cobramos <strong id="removalPrice" style="color:var(--text-dim)">R$ 100,00</strong> pela remoção do material antigo e limpeza profunda dos vidros antes da nova aplicação.
   </div>
 </main>
 
@@ -461,6 +461,7 @@
   <div class="modal" id="modal"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const films = [
   {
@@ -612,7 +613,44 @@ document.querySelectorAll('[data-toggle]').forEach(btn => {
   });
 });
 
+// ── Preços dinâmicos (vêm do app Oficina Pro, aba "Preços Película") ──────
+// Lê a tabela "config" (chave="precos_peliculas") no Supabase. Se não
+// conseguir (offline, RLS, ou nunca foi salvo pelo app ainda), a página
+// segue funcionando normalmente com os valores fixos definidos acima.
+const SUPABASE_URL = "https://wpvbrutwkgzzdfovbszy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwdmJydXR3a2d6emRmb3Zic3p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMTMzNDIsImV4cCI6MjEwMzg4OTM0Mn0.TSJmpFiScpMGID9gcCJ7yc-swwTObADw2mKHSGuX0Kk";
+
+async function aplicarPrecosDinamicos(){
+  try {
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data, error } = await supa.from("config").select("valor").eq("chave","precos_peliculas").maybeSingle();
+    if (error || !data || !data.valor) return;
+    const p = data.valor;
+    const brl = v => "R$ " + Number(v).toFixed(2).replace(".", ",");
+    const setPrice = (id, idx, val) => {
+      if (val === undefined || val === null || val === "") return;
+      const f = films.find(x => x.id === id);
+      if (f && f.prices[idx]) f.prices[idx].value = brl(val);
+    };
+    setPrice('profissional', 0, p.profissional && p.profissional.lateralTraseiro);
+    setPrice('profissional', 1, p.profissional && p.profissional.paraBrisa);
+    setPrice('nano-carbono', 0, p.nanoCarbono && p.nanoCarbono.lateralTraseiro);
+    setPrice('nano-carbono', 1, p.nanoCarbono && p.nanoCarbono.paraBrisa);
+    setPrice('nano-ceramica', 0, p.nanoCeramica && p.nanoCeramica.lateralTraseiro);
+    setPrice('nano-ceramica', 1, p.nanoCeramica && p.nanoCeramica.paraBrisa);
+    setPrice('ps8', 0, p.ps8 && p.ps8.incolor);
+    setPrice('ps8', 1, p.ps8 && p.ps8.comProfissional);
+    setPrice('ps8', 2, p.ps8 && p.ps8.comNanoCarbono);
+    setPrice('ps8', 3, p.ps8 && p.ps8.comNanoCeramica);
+    if (p.remocao !== undefined && p.remocao !== null && p.remocao !== "") {
+      const el = document.getElementById('removalPrice');
+      if (el) el.textContent = brl(p.remocao);
+    }
+  } catch (e) { console.error('[precos-peliculas]', e); }
+}
+
 render();
+aplicarPrecosDinamicos().then(render);
 </script>
 </body>
 </html>
