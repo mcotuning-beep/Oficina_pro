@@ -8,7 +8,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -60,6 +60,7 @@ const SYNC_TABLES = {
   op_opcoes_pgto: { table:"config", kind:"row", chave:"opcoes_pagamento" },
   op_pagamento:   { table:"dados_pagamento", kind:"id1" },
   op_agenda:      { table:"agenda", kind:"keyed" },
+  op_precos_peliculas: { table:"config", kind:"row", chave:"precos_peliculas" },
 };
 
 // O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
@@ -159,7 +160,7 @@ async function pullAll() {
         setOutboxEntry(key, null, null);
       } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
     }
-    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag] = await Promise.all([
+    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
       supabase.from("produtos").select("*"),
@@ -170,6 +171,7 @@ async function pullAll() {
       supabase.from("config").select("*").eq("chave","geral").maybeSingle(),
       supabase.from("config").select("*").eq("chave","opcoes_pagamento").maybeSingle(),
       supabase.from("dados_pagamento").select("*").eq("id",1).maybeSingle(),
+      supabase.from("config").select("*").eq("chave","precos_peliculas").maybeSingle(),
     ]);
     // Ainda pendente depois da tentativa de flush acima: mantém o que está
     // salvo no aparelho em vez de sobrescrever com dados remotos incompletos.
@@ -200,6 +202,7 @@ async function pullAll() {
     applyIfNotPending("op_config", JSON.stringify((cfgGeral.data && cfgGeral.data.valor) || {}));
     applyIfNotPending("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
     applyIfNotPending("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
+    applyIfNotPending("op_precos_peliculas", JSON.stringify((cfgPrecosPeliculas.data && cfgPrecosPeliculas.data.valor) || PRECOS_PELICULAS_PADRAO));
   } finally {
     SYNC_PAUSED = false;
   }
@@ -429,6 +432,17 @@ const getDadosPagamento = () => { try { return JSON.parse(localStorage.getItem(K
 const setDadosPagamento = v => localStorage.setItem(K.pagamento, JSON.stringify(v));
 const getOpcoesPagamento = () => { try { return JSON.parse(localStorage.getItem("op_opcoes_pgto")||"[]"); } catch { return []; } };
 const setOpcoesPagamento = v => localStorage.setItem("op_opcoes_pgto", JSON.stringify(v));
+
+// ── PREÇOS DO CATÁLOGO DE PELÍCULAS (sincroniza com a página pública peliculas-scarpel.html) ──
+const PRECOS_PELICULAS_PADRAO = {
+  profissional:  { lateralTraseiro:360, paraBrisa:120 },
+  nanoCarbono:   { lateralTraseiro:450, paraBrisa:250 },
+  nanoCeramica:  { lateralTraseiro:650, paraBrisa:350 },
+  ps8: { incolor:1000, comProfissional:1480, comNanoCarbono:1700, comNanoCeramica:2000 },
+  remocao: 100,
+};
+const getPrecosPeliculas = () => { try { const v = JSON.parse(localStorage.getItem(K.precosPeliculas)||"{}"); return Object.keys(v).length ? v : PRECOS_PELICULAS_PADRAO; } catch { return PRECOS_PELICULAS_PADRAO; } };
+const setPrecosPeliculas = v => localStorage.setItem(K.precosPeliculas, JSON.stringify(v));
 
 // ── PRÉ-CARREGA DADOS DA PLANILHA (executa uma única vez) ────────────────────
 (function seedData() {
@@ -3471,6 +3485,77 @@ function AbaTaxas() {
   );
 }
 
+// ── ABA PREÇOS PELÍCULA ─────────────────────────────────────────────────────
+// Edita os valores exibidos na página pública do catálogo (public/peliculas-scarpel.html).
+// Salvar aqui grava em localStorage (op_precos_peliculas), que sincroniza automaticamente
+// com a tabela "config" (chave="precos_peliculas") no Supabase — a página do catálogo lê
+// esse mesmo registro para montar os preços exibidos ao cliente.
+function AbaPrecosPeliculas() {
+  const [precos, setPrecosState] = useState(getPrecosPeliculas);
+  const [salvando, setSalvando] = useState(false);
+
+  const upd = (path, valor) => {
+    const num = valor === "" ? "" : parseFloat(valor);
+    setPrecosState(p => {
+      const novo = {...p};
+      if (path.length === 1) { novo[path[0]] = num; }
+      else { novo[path[0]] = {...novo[path[0]], [path[1]]: num}; }
+      return novo;
+    });
+  };
+
+  const salvar = () => {
+    setSalvando(true);
+    setPrecosPeliculas(precos);
+    setTimeout(()=>setSalvando(false), 400);
+    toast("Preços do catálogo atualizados!");
+  };
+
+  const restaurar = () => { setPrecosState(PRECOS_PELICULAS_PADRAO); toast("Valores padrão restaurados (clique em Salvar para confirmar)."); };
+
+  const linhas = [
+    {grupo:"profissional", titulo:"Linha Profissional", campos:[["lateralTraseiro","Laterais e traseiro"],["paraBrisa","Para-brisa"]]},
+    {grupo:"nanoCarbono", titulo:"Linha Nano Carbono", campos:[["lateralTraseiro","Laterais e traseiro"],["paraBrisa","Para-brisa"]]},
+    {grupo:"nanoCeramica", titulo:"Linha Nano Cerâmica", campos:[["lateralTraseiro","Laterais e traseiro"],["paraBrisa","Para-brisa"]]},
+    {grupo:"ps8", titulo:"Antivandalismo PS8", campos:[["incolor","Incolor"],["comProfissional","+ Profissional"],["comNanoCarbono","+ Nano Carbono"],["comNanoCeramica","+ Nano Cerâmica"]]},
+  ];
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"flex-start"}}>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,color:T.text,marginBottom:2}}>Preços do Catálogo de Películas</div>
+          <div style={{fontSize:12,color:T.muted}}>Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.</div>
+        </div>
+        <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>
+      </div>
+
+      <div style={{display:"grid",gap:12}}>
+        {linhas.map(l => (
+          <Card key={l.grupo} style={{padding:14}}>
+            <div style={{fontWeight:700,marginBottom:10,color:T.text}}>{l.titulo}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+              {l.campos.map(([campo,label]) => (
+                <Inp key={campo} label={label} type="number" value={precos[l.grupo]?.[campo] ?? ""} onChange={v=>upd([l.grupo,campo],v)} placeholder="0,00" />
+              ))}
+            </div>
+          </Card>
+        ))}
+        <Card style={{padding:14}}>
+          <div style={{fontWeight:700,marginBottom:10,color:T.text}}>Remoção de película antiga</div>
+          <div style={{maxWidth:220}}>
+            <Inp label="Taxa de remoção" type="number" value={precos.remocao ?? ""} onChange={v=>upd(["remocao"],v)} placeholder="0,00" />
+          </div>
+        </Card>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+        <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando..." : "Salvar Preços"}</Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── ABA HISTÓRICO ─────────────────────────────────────────────────────────────
 
 
@@ -4152,7 +4237,7 @@ export default function App() {
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"compras",icon:"🛒",label:"Compras"},
     ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"}] : []),
-    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
+    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"},{id:"precos_peliculas",icon:"🪟",label:"Preços Película"}] : []),
   ];
 
   const sair = async () => {
@@ -4196,6 +4281,7 @@ export default function App() {
         {aba==="simulador" && <AbaSimulador />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && <AbaAnalise />}
+        {aba==="precos_peliculas" && isAdmin && <AbaPrecosPeliculas />}
       </div>
       <Toast />
     </div></>
