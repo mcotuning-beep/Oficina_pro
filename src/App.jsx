@@ -3537,13 +3537,13 @@ function AbaPrecosPeliculas() {
 
   return (
     <div>
-      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"flex-start"}}>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:700,color:T.text,marginBottom:2}}>Preços do Catálogo de Películas</div>
-          <div style={{fontSize:12,color:T.muted}}>Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.</div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontWeight:700,color:T.text,marginBottom:2}}>Preços do Catálogo de Películas</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <Btn v="blue" onClick={compartilharCatalogo}>📤 Compartilhar Catálogo</Btn>
+          <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>
         </div>
-        <Btn v="blue" onClick={compartilharCatalogo}>📤 Compartilhar Catálogo</Btn>
-        <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>
       </div>
 
       <div style={{display:"grid",gap:12}}>
