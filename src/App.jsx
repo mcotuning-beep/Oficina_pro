@@ -3490,9 +3490,24 @@ function AbaTaxas() {
 // Salvar aqui grava em localStorage (op_precos_peliculas), que sincroniza automaticamente
 // com a tabela "config" (chave="precos_peliculas") no Supabase — a página do catálogo lê
 // esse mesmo registro para montar os preços exibidos ao cliente.
+const CATALOGO_PELICULAS_URL = "https://oficina-pro-mu.vercel.app/peliculas-scarpel.html";
+
 function AbaPrecosPeliculas() {
   const [precos, setPrecosState] = useState(getPrecosPeliculas);
   const [salvando, setSalvando] = useState(false);
+
+  const compartilharCatalogo = async () => {
+    const texto = "Confira nosso catálogo de películas automotivas:";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Catálogo de Películas — M.Scarpel", text: texto, url: CATALOGO_PELICULAS_URL });
+        return;
+      }
+    } catch (e) { if (e.name === "AbortError") return; }
+    // Sem suporte a compartilhamento nativo (ex: desktop): abre no WhatsApp com o link já no texto.
+    const msg = encodeURIComponent(texto + " " + CATALOGO_PELICULAS_URL);
+    window.open("https://wa.me/5511939228558?text=" + msg, "_blank");
+  };
 
   const upd = (path, valor) => {
     const num = valor === "" ? "" : parseFloat(valor);
@@ -3527,6 +3542,7 @@ function AbaPrecosPeliculas() {
           <div style={{fontWeight:700,color:T.text,marginBottom:2}}>Preços do Catálogo de Películas</div>
           <div style={{fontSize:12,color:T.muted}}>Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.</div>
         </div>
+        <Btn v="blue" onClick={compartilharCatalogo}>📤 Compartilhar Catálogo</Btn>
         <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>
       </div>
 
