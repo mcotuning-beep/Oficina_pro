@@ -25,13 +25,22 @@ let SYNC_PAUSED = false;
 const safeParseArr = s => { try { const v = JSON.parse(s || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
 const safeParseObj = s => { try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; } };
 
+// Campo numérico vazio ("") ia direto para colunas numeric do Postgres e
+// derrubava a gravação inteira (22P02: invalid input syntax for type numeric).
+// Como o envio é em lote, UMA OS com campo vazio impedia TODAS de sincronizar.
+const num = v => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 const ordToDb = o => ({
-  id:o.id, numero:o.numero, data:o.data||null, data_conclusao:o.dataConclusao||null, status:o.status||null, tipo:o.tipo||null,
+  id:o.id, numero:num(o.numero), data:o.data||null, data_conclusao:o.dataConclusao||null, status:o.status||null, tipo:o.tipo||null,
   placa:o.placa||null, veiculo:o.veiculo||null, ano:o.ano||null, cliente:o.cliente||null, telefone:o.telefone||null, km:o.km||null,
-  servicos:o.servicos||null, observacao:o.observacao||null, mao_de_obra:o.maoDeObra||null, desconto:o.desconto||null,
-  total_bruto:o.totalBruto ?? null, total_liquido:o.totalLiquido ?? null, total_taxas:o.totalTaxas ?? null,
-  custo_pecas:o.custoPecas ?? null, outros_custos:o.outrosCustos ?? null, origem:o.origem||null, fechado_em:o.fechadoEm||null,
-  lucro_real:o.lucroReal ?? null, margem_real:o.margemReal ?? null, checklist:o.checklist ?? null,
+  servicos:o.servicos||null, observacao:o.observacao||null, mao_de_obra:num(o.maoDeObra), desconto:num(o.desconto),
+  total_bruto:num(o.totalBruto), total_liquido:num(o.totalLiquido), total_taxas:num(o.totalTaxas),
+  custo_pecas:num(o.custoPecas), outros_custos:num(o.outrosCustos), origem:o.origem||null, fechado_em:o.fechadoEm||null,
+  lucro_real:num(o.lucroReal), margem_real:num(o.margemReal), checklist:o.checklist ?? null,
   itens:o.itens||[], pagamentos:o.pagamentos||[],
 });
 const ordFromDb = r => ({
@@ -52,7 +61,7 @@ const identId = r => r;
 const SYNC_TABLES = {
   op_cli:    { table:"clientes", kind:"array", toDb:identId, fromDb:identId },
   op_vei:    { table:"veiculos", kind:"array", toDb:veiToDb, fromDb:veiFromDb },
-  op_prd:    { table:"produtos", kind:"array", toDb:identId, fromDb:identId },
+  op_prd:    { table:"produtos", kind:"array", toDb:p=>({...p, custo:num(p.custo), venda:num(p.venda)}), fromDb:identId },
   op_ord:    { table:"ordens",   kind:"array", toDb:ordToDb, fromDb:ordFromDb },
   op_taxas:  { table:"taxas",    kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
   op_compras:{ table:"compras",  kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
