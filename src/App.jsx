@@ -107,13 +107,32 @@ async function pushSync(key, cfg, oldStr, newStr) {
 const OUTBOX_KEY = "__op_outbox__";
 const getOutbox = () => { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY)||"{}"); } catch { return {}; } };
 let _syncOffline = false;
+// Guarda o motivo real da última falha para que a mensagem na tela diga o que
+// aconteceu (permissão, sessão, dado inválido...) em vez de um "falhou" genérico.
+let _erroSync = "";
+let _ultimoAvisoErro = 0;
+const descreveErroSync = e => {
+  if (!e) return "motivo desconhecido";
+  const partes = [e.code, e.message || String(e), e.details, e.hint].filter(Boolean);
+  return partes.join(" | ").slice(0, 220);
+};
+const registrarErroSync = (key, e) => {
+  _erroSync = key + ": " + descreveErroSync(e);
+  console.error("[sync]", key, e);
+};
+const avisarErroSync = () => {
+  const agora = Date.now();
+  if (agora - _ultimoAvisoErro < 60000) return;   // no máximo um aviso por minuto
+  _ultimoAvisoErro = agora;
+  toast("Falha ao salvar no servidor — " + (_erroSync || "motivo desconhecido"));
+};
 const notifySyncStatus = pendingCount => {
   const offline = pendingCount > 0;
   if (offline === _syncOffline) return;
   _syncOffline = offline;
   // A falha nem sempre é de internet (pode ser permissão/sessão), então a
   // mensagem não afirma mais que o aparelho está sem conexão.
-  if (offline) toast("Não consegui salvar no servidor agora — está guardado neste aparelho e eu tento de novo sozinho.");
+  if (offline) toast("Não consegui salvar no servidor — " + (_erroSync || "motivo desconhecido") + ". Está guardado neste aparelho e eu tento de novo.");
   else toast("Tudo sincronizado com o servidor!");
 };
 const setOutboxEntry = (key, oldStr, newStr) => {
@@ -134,7 +153,7 @@ const setOutboxEntry = (key, oldStr, newStr) => {
     if (!cfg) return;
     pushSync(key, cfg, oldValue, value)
       .then(() => setOutboxEntry(key, null, null))
-      .catch(e => { console.error("[sync]", key, e); setOutboxEntry(key, oldValue, value); });
+      .catch(e => { registrarErroSync(key, e); setOutboxEntry(key, oldValue, value); });
   };
   const flushOutbox = () => {
     const ob = getOutbox();
@@ -143,7 +162,7 @@ const setOutboxEntry = (key, oldStr, newStr) => {
       if (!cfg) { setOutboxEntry(key, null, null); return; }
       pushSync(key, cfg, ob[key].oldStr, ob[key].newStr)
         .then(() => setOutboxEntry(key, null, null))
-        .catch(e => console.error("[sync-retry]", key, e));
+        .catch(e => { registrarErroSync(key, e); avisarErroSync(); });
     });
   };
   window.addEventListener("online", flushOutbox);
