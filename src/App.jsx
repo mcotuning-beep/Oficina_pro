@@ -250,7 +250,20 @@ const calcTotal = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.venda||0)*(p
 const calcCustoPecas = os => (os.itens||[]).reduce((s,i)=>s+parseFloat(i.custo||0)*(parseFloat(i.qty||1)||1),0);
 const calcTotalPago = os => (os?.pagamentos||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0);
 const calcSaldoOS = os => Math.max(0, (calcTotal(os)-Number(os?.desconto||0))-calcTotalPago(os));
-const getDataPagamento = (p, os) => String(p?.registradoEm || p?.data || os?.fechadoEm || os?.dataConclusao || os?.data || "").slice(0,10);
+// Carimbos como `registradoEm`/`fechadoEm` são gravados em ISO (UTC). Fatiar a
+// string direto devolvia a data em UTC, então um pagamento fechado depois das 21h
+// (UTC-3) era contabilizado no dia seguinte e sumia do "recebido/lucro hoje", que
+// compara com a data local. dataLocal() converte pro fuso do aparelho antes de cortar.
+const dataLocal = v => {
+  const s = String(v || "");
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;          // já é uma data pura
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s.slice(0,10);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+};
+const getDataPagamento = (p, os) => dataLocal(p?.registradoEm || p?.data || os?.fechadoEm || os?.dataConclusao || os?.data || "");
 const calcRecebimentosOS = os => {
   const pagamentos = os?.pagamentos || [];
   if (pagamentos.length) return pagamentos.map(p => ({data:getDataPagamento(p, os), valor:parseFloat(p.valor||0), os}));
@@ -699,7 +712,7 @@ function ModalPagamento({ os, onSave, onClose }) {
   const ok = Math.abs(restante)<0.01;
 
   const salvar = () => {
-    const hojeStr = new Date().toISOString().slice(0,10);
+    const hojeStr = today();   // data local — antes usava UTC e virava o dia às 21h
     const contabilizarDiaMeta = isDiaUtilPadrao(hojeStr);
     const outros = parseFloat(outrosCustos||0);
     const lucroReal = totalLiq - custoPecas - outros;
@@ -3492,7 +3505,7 @@ function AbaTaxas() {
 // esse mesmo registro para montar os preços exibidos ao cliente.
 const CATALOGO_PELICULAS_URL = "https://oficina-pro-mu.vercel.app/peliculas-scarpel.html";
 
-function AbaPrecosPeliculas() {
+function AbaPrecosPeliculas({ isAdmin = true }) {
   const [precos, setPrecosState] = useState(getPrecosPeliculas);
   const [salvando, setSalvando] = useState(false);
 
@@ -3538,15 +3551,25 @@ function AbaPrecosPeliculas() {
   return (
     <div>
       <div style={{marginBottom:16}}>
-        <div style={{fontWeight:700,color:T.text,marginBottom:2}}>Preços do Catálogo de Películas</div>
-        <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.</div>
+        <div style={{fontWeight:700,color:T.text,marginBottom:2}}>{isAdmin ? "Preços do Catálogo de Películas" : "Catálogo de Películas"}</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:10}}>
+          {isAdmin
+            ? 'Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.'
+            : "Envie o catálogo completo para o cliente pelo WhatsApp — com todas as linhas, tonalidades e valores atualizados."}
+        </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           <Btn v="blue" onClick={compartilharCatalogo}>📤 Compartilhar Catálogo</Btn>
-          <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>
+          {isAdmin && <Btn v="ghost" onClick={restaurar}>↺ Padrão</Btn>}
         </div>
       </div>
 
-      <div style={{display:"grid",gap:12}}>
+      {!isAdmin && (
+        <Card style={{padding:14,color:T.sub,fontSize:13,lineHeight:1.5}}>
+          O cliente recebe um link com o catálogo completo, o simulador de tonalidade e os preços sempre atualizados.
+        </Card>
+      )}
+
+      {isAdmin && <div style={{display:"grid",gap:12}}>
         {linhas.map(l => (
           <Card key={l.grupo} style={{padding:14}}>
             <div style={{fontWeight:700,marginBottom:10,color:T.text}}>{l.titulo}</div>
@@ -3563,11 +3586,11 @@ function AbaPrecosPeliculas() {
             <Inp label="Taxa de remoção" type="number" value={precos.remocao ?? ""} onChange={v=>upd(["remocao"],v)} placeholder="0,00" />
           </div>
         </Card>
-      </div>
+      </div>}
 
-      <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+      {isAdmin && <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
         <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando..." : "Salvar Preços"}</Btn>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -4253,7 +4276,8 @@ export default function App() {
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"compras",icon:"🛒",label:"Compras"},
     ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"}] : []),
-    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"},{id:"precos_peliculas",icon:"🪟",label:"Preços Película"}] : []),
+    {id:"precos_peliculas",icon:"🪟",label:isAdmin?"Preços Película":"Catálogo"},
+    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
 
   const sair = async () => {
@@ -4297,7 +4321,7 @@ export default function App() {
         {aba==="simulador" && <AbaSimulador />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && <AbaAnalise />}
-        {aba==="precos_peliculas" && isAdmin && <AbaPrecosPeliculas />}
+        {aba==="precos_peliculas" && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
       <Toast />
     </div></>
