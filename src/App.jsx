@@ -71,7 +71,10 @@ const checkRes = res => { if (res && res.error) throw res.error; return res; };
 
 async function pushSync(key, cfg, oldStr, newStr) {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return;
+  // Sem sessão isso PRECISA falhar. Antes dava "return" (promessa resolvida com
+  // sucesso), então quem chamava limpava a pendência da fila e a alteração
+  // sumia sem nunca chegar no servidor — o dado ficava só naquele aparelho.
+  if (!session) throw new Error("sem sessao ativa — gravacao adiada");
   if (cfg.kind === "array") {
     const oldArr = safeParseArr(oldStr), newArr = safeParseArr(newStr);
     const newIds = new Set(newArr.map(r=>r.id));
@@ -108,8 +111,10 @@ const notifySyncStatus = pendingCount => {
   const offline = pendingCount > 0;
   if (offline === _syncOffline) return;
   _syncOffline = offline;
-  if (offline) toast("Sem conexão — o que você salvar fica guardado no aparelho e sincroniza sozinho quando a internet voltar.");
-  else toast("Conectado! Sincronizando com o servidor...");
+  // A falha nem sempre é de internet (pode ser permissão/sessão), então a
+  // mensagem não afirma mais que o aparelho está sem conexão.
+  if (offline) toast("Não consegui salvar no servidor agora — está guardado neste aparelho e eu tento de novo sozinho.");
+  else toast("Tudo sincronizado com o servidor!");
 };
 const setOutboxEntry = (key, oldStr, newStr) => {
   const ob = getOutbox();
@@ -146,7 +151,10 @@ const setOutboxEntry = (key, oldStr, newStr) => {
 })();
 
 async function pullAll() {
-  SYNC_PAUSED = true;
+  // A pausa vale só para as gravações que o próprio pullAll faz no final (elas
+  // vêm do servidor e não devem ser reenviadas). Antes ela cobria também a
+  // espera da rede: se o usuário salvasse uma OS nesse intervalo, a gravação
+  // era ignorada e nem entrava na fila de pendências — sumia sem aviso.
   try {
     // Antes de puxar do servidor, tenta subir o que ainda estiver pendente
     // neste aparelho — assim uma reconexão já sincroniza o que faltava antes
@@ -177,25 +185,26 @@ async function pullAll() {
     // salvo no aparelho em vez de sobrescrever com dados remotos incompletos.
     const outbox = getOutbox();
     const applyIfNotPending = (key, jsonStr) => { if (!outbox[key]) localStorage.setItem(key, jsonStr); };
+
+    // As salvaguardas abaixo dependem da rede; ficam ANTES da pausa para que a
+    // janela pausada seja só o trecho síncrono que aplica os dados na tela.
+    const localTax = db.get(K.taxas);
+    const subirTaxas = (tax.data||[]).length === 0 && localTax.length > 0;
+    if (subirTaxas) await supabase.from("taxas").upsert(localTax.map(SYNC_TABLES.op_taxas.toDb));
+    const localCmp = db.get(K.compras);
+    const subirCompras = (cmp.data||[]).length === 0 && localCmp.length > 0;
+    if (subirCompras) await supabase.from("compras").upsert(localCmp.map(SYNC_TABLES.op_compras.toDb));
+
+    SYNC_PAUSED = true;
     applyIfNotPending("op_cli", JSON.stringify((cli.data||[]).map(SYNC_TABLES.op_cli.fromDb)));
     applyIfNotPending("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
     applyIfNotPending("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
     applyIfNotPending("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
     // Salvaguarda: se a tabela remota ainda estiver vazia mas já existir algo salvo
     // neste aparelho (ex.: taxas configuradas antes da migração), preserva o local
-    // e sobe ele pro Supabase, em vez de sobrescrever com vazio.
-    const localTax = db.get(K.taxas);
-    if ((tax.data||[]).length === 0 && localTax.length) {
-      await supabase.from("taxas").upsert(localTax.map(SYNC_TABLES.op_taxas.toDb));
-    } else {
-      applyIfNotPending("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
-    }
-    const localCmp = db.get(K.compras);
-    if ((cmp.data||[]).length === 0 && localCmp.length) {
-      await supabase.from("compras").upsert(localCmp.map(SYNC_TABLES.op_compras.toDb));
-    } else {
-      applyIfNotPending("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
-    }
+    // (o envio pro Supabase já aconteceu acima, antes da pausa).
+    if (!subirTaxas) applyIfNotPending("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
+    if (!subirCompras) applyIfNotPending("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
     const agendaObj = {};
     (agd.data||[]).forEach(r=>{ try { agendaObj[r.id] = JSON.parse(r.texto); } catch { agendaObj[r.id] = r.texto; } });
     applyIfNotPending("op_agenda", JSON.stringify(agendaObj));
