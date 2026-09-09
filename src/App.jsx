@@ -54,14 +54,29 @@ const ordFromDb = r => ({
   ...(r.checklist!=null ? {checklist:r.checklist} : {}),
   itens:r.itens||[], pagamentos:r.pagamentos||[],
 });
+// produtos e clientes iam para o Supabase com o objeto inteiro (identId). Como
+// os registros tinham conjuntos de campos diferentes entre si (os que vieram do
+// banco traziam updated_at, os criados no aparelho não), o PostgREST montava a
+// lista de colunas pela união e preenchia as faltantes com NULL — em vez de
+// deixar o banco aplicar o DEFAULT now(). Resultado: 23502 em updated_at, e a
+// gravação inteira era recusada. Agora cada linha sai com o mesmo formato fixo,
+// sem updated_at, deixando o padrão do banco agir.
+const prdToDb = p => ({
+  id:p.id, nome:p.nome||null, categoria:p.categoria||null, referencia:p.referencia||null,
+  custo:num(p.custo), venda:num(p.venda),
+  margem:(p.margem===null||p.margem===undefined||p.margem==="") ? null : String(p.margem),
+});
+const cliToDb = c => ({
+  id:c.id, nome:c.nome||null, tel:c.tel||null, criado:c.criado||null, fiscal:c.fiscal ?? null,
+});
 const veiToDb = r => ({ id:r.id, placa:r.placa||null, modelo:r.modelo||null, ano:r.ano||null, cliente_id:r.clienteId||null });
 const veiFromDb = r => ({ id:r.id, placa:r.placa, modelo:r.modelo, ano:r.ano, clienteId:r.cliente_id });
 const identId = r => r;
 
 const SYNC_TABLES = {
-  op_cli:    { table:"clientes", kind:"array", toDb:identId, fromDb:identId },
+  op_cli:    { table:"clientes", kind:"array", toDb:cliToDb, fromDb:identId },
   op_vei:    { table:"veiculos", kind:"array", toDb:veiToDb, fromDb:veiFromDb },
-  op_prd:    { table:"produtos", kind:"array", toDb:p=>({...p, custo:num(p.custo), venda:num(p.venda)}), fromDb:identId },
+  op_prd:    { table:"produtos", kind:"array", toDb:prdToDb, fromDb:identId },
   op_ord:    { table:"ordens",   kind:"array", toDb:ordToDb, fromDb:ordFromDb },
   op_taxas:  { table:"taxas",    kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
   op_compras:{ table:"compras",  kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
@@ -118,7 +133,7 @@ const getOutbox = () => { try { return JSON.parse(localStorage.getItem(OUTBOX_KE
 let _syncOffline = false;
 // Guarda o motivo real da última falha para que a mensagem na tela diga o que
 // aconteceu (permissão, sessão, dado inválido...) em vez de um "falhou" genérico.
-let _erroSync = "";
+let _erroSync = (() => { try { return localStorage.getItem("__op_erro_sync__") || ""; } catch { return ""; } })();
 let _ultimoAvisoErro = 0;
 const descreveErroSync = e => {
   if (!e) return "motivo desconhecido";
@@ -127,6 +142,7 @@ const descreveErroSync = e => {
 };
 const registrarErroSync = (key, e) => {
   _erroSync = key + ": " + descreveErroSync(e);
+  try { localStorage.setItem("__op_erro_sync__", _erroSync); } catch {}
   console.error("[sync]", key, e);
 };
 const avisarErroSync = () => {
