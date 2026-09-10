@@ -4338,7 +4338,7 @@ export default function App() {
   const abas = [
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"compras",icon:"🛒",label:"Compras"},
-    ...(isAdmin ? [{id:"agenda",icon:"📅",label:"Agenda"}] : []),
+    {id:"agenda",icon:"📅",label:"Agenda"},
     {id:"precos_peliculas",icon:"🪟",label:isAdmin?"Preços Película":"Catálogo"},
     ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
   ];
