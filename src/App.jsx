@@ -1222,7 +1222,8 @@ ${os.servicos?"<div class=\"sec\">Servicos Solicitados</div><div style=\"font-si
   </tbody>
 </table>
 
-<div class="tot"><span>Total</span><span>R$ ${total.toFixed(2).replace(".",",")}</span></div>
+${Number(os.desconto||0)>0 ? "<div style=\"display:flex;justify-content:space-between;font-size:9px;color:#888;margin-top:5px\"><span>Subtotal</span><span>R$ "+total.toFixed(2).replace(".",",")+"</span></div><div style=\"display:flex;justify-content:space-between;font-size:9px;color:#d97706;font-weight:700;margin-bottom:1px\"><span>Desconto</span><span>- R$ "+Number(os.desconto).toFixed(2).replace(".",",")+"</span></div>" : ""}
+<div class="tot"><span>Total</span><span>R$ ${Math.max(0,total-Number(os.desconto||0)).toFixed(2).replace(".",",")}</span></div>
 
 ${os.tipo !== "Orçamento" && garantiaValor > 0 ? `<div class="warranty-box">
   <div class="warranty-icon">🛡️</div>
@@ -2155,6 +2156,8 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
   const [opcoesPagamentoOpen, setOpcoesPagamentoOpen] = useState(false);
+  const [descontoModo, setDescontoModo] = useState("valor"); // "valor" | "porcentagem"
+  const [descontoPct, setDescontoPct] = useState("");
   const isAdmin = nivelAcesso === "admin";
 
   const upd = (k,v) => setOs(o=>{
@@ -2217,6 +2220,18 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
 
   const total = calcTotal(os);
   const fechamento = calcResultadoOS(os);
+
+  // Quando o desconto está em modo "%", recalcula o valor em R$ sempre que o
+  // total mudar (item adicionado/removido, mão de obra editada) ou o
+  // percentual for alterado — o campo os.desconto continua guardando sempre
+  // o valor final em reais, para não impactar nenhum cálculo existente
+  // (saldo, relatórios, análise, fechamento, sync com o Supabase).
+  useEffect(() => {
+    if (descontoModo !== "porcentagem") return;
+    const pct = parseFloat(descontoPct || 0);
+    const novoDesconto = pct > 0 ? Math.round(total * pct / 100 * 100) / 100 : 0;
+    if (Number(os.desconto || 0) !== novoDesconto) upd("desconto", novoDesconto);
+  }, [descontoModo, descontoPct, total]);
 
   const salvarLocal = (osFinal) => {
     const f = osFinal||os;
@@ -2494,6 +2509,46 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
           <span style={{fontSize:12,color:T.muted}}>Peças: {fmtBRL(os.itens.reduce((s,i)=>s+parseFloat(i.venda||0)*i.qty,0))}</span>
           <span style={{fontSize:20,fontWeight:900,color:T.green}}>Total: {fmtBRL(total)}</span>
         </div>
+      </div>}
+
+      {isAdmin && <div style={{background:T.bg,borderRadius:10,padding:12,display:"grid",gap:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>🏷️ Desconto</span>
+          <div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
+            <button onClick={()=>setDescontoModo("valor")} style={{
+              background:descontoModo==="valor"?T.accent:"transparent",
+              color:descontoModo==="valor"?"#000":T.muted,
+              border:"none",borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:800,
+              cursor:"pointer",fontFamily:"inherit"
+            }}>R$</button>
+            <button onClick={()=>{setDescontoModo("porcentagem");setDescontoPct("");}} style={{
+              background:descontoModo==="porcentagem"?T.accent:"transparent",
+              color:descontoModo==="porcentagem"?"#000":T.muted,
+              border:"none",borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:800,
+              cursor:"pointer",fontFamily:"inherit"
+            }}>%</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <input type="number"
+            value={descontoModo==="porcentagem" ? descontoPct : (os.desconto||"")}
+            onChange={e=>{
+              const v = e.target.value;
+              if (descontoModo==="porcentagem") setDescontoPct(v);
+              else upd("desconto", v);
+            }}
+            placeholder={descontoModo==="porcentagem" ? "Ex: 20" : "0,00"}
+            style={{flex:1,background:T.surface,border:"1px solid "+T.accent+"66",borderRadius:8,
+              color:T.accent,padding:"8px 10px",fontSize:15,fontWeight:800,fontFamily:"inherit",
+              outline:"none",colorScheme:"dark",boxSizing:"border-box"}} />
+          {descontoModo==="porcentagem" && <span style={{fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>= {fmtBRL(os.desconto||0)}</span>}
+        </div>
+        {Number(os.desconto||0)>0 && (
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,borderTop:"1px solid "+T.border,paddingTop:8}}>
+            <span style={{color:T.muted}}>Total com desconto</span>
+            <span style={{color:T.accent}}>{fmtBRL(Math.max(0,total-Number(os.desconto||0)))}</span>
+          </div>
+        )}
       </div>}
 
       {isAdmin && os.pagamentos?.length>0 && (()=>{
