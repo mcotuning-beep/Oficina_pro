@@ -3566,7 +3566,7 @@ function AbaTaxas() {
 // Salvar aqui grava em localStorage (op_precos_peliculas), que sincroniza automaticamente
 // com a tabela "config" (chave="precos_peliculas") no Supabase — a página do catálogo lê
 // esse mesmo registro para montar os preços exibidos ao cliente.
-const CATALOGO_PELICULAS_URL = "https://oficina-pro-mu.vercel.app/peliculas-scarpel.html";
+const CATALOGO_PELICULAS_URL = "https://oficina-pro-mu.vercel.app/peliculas.html";
 
 function AbaPrecosPeliculas({ isAdmin = true }) {
   const [precos, setPrecosState] = useState(getPrecosPeliculas);
