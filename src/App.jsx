@@ -298,6 +298,68 @@ async function pullAll() {
     SYNC_PAUSED = false;
   }
 }
+
+// ── BACKUP DIÁRIO AUTOMÁTICO ────────────────────────────────────────────────
+// Guarda uma "fotografia" de todos os dados (OS, clientes, veículos, produtos,
+// taxas, compras, agenda, config) uma vez por dia, na tabela "backups" do
+// Supabase. O navegador não tem como "acordar" sozinho à meia-noite se
+// ninguém estiver com o app aberto, então o gatilho é a primeira abertura do
+// dia: todo login/carregamento de sessão de um admin confere se já existe um
+// backup com a data de hoje e, se não existir, cria um — sem o usuário
+// perceber. Serve de rede de segurança (dá pra restaurar um dia que "deu
+// problema") e de referência pra investigar bugs futuros.
+const BACKUP_CHAVES = ["op_cli","op_vei","op_prd","op_ord","op_taxas","op_compras",
+  "op_config","op_opcoes_pgto","op_pagamento","op_agenda","op_precos_peliculas"];
+const BACKUP_RETENCAO_DIAS = 10;
+
+// Guarda o JSON já salvo em cada chave, como string (o mesmo formato que já
+// está no localStorage) — restaurar depois é só devolver essa mesma string
+// pro localStorage.setItem de cada chave, sem precisar reformatar nada.
+const montarSnapshotBackup = () => {
+  const dados = {};
+  BACKUP_CHAVES.forEach(k => { dados[k] = localStorage.getItem(k) || null; });
+  return dados;
+};
+
+async function verificarBackupDiario() {
+  try {
+    const hojeStr = today();
+    const { data: existente, error: erroSelect } = await supabase
+      .from("backups").select("id").eq("id", hojeStr).maybeSingle();
+    if (erroSelect) throw erroSelect;
+    if (existente) return; // já existe um backup de hoje, não faz de novo
+    checkRes(await supabase.from("backups").upsert({
+      id: hojeStr, dados: montarSnapshotBackup(), criado_em: new Date().toISOString(),
+    }));
+    // Limpa backups fora da janela de retenção. Os ids são datas no formato
+    // AAAA-MM-DD, então a comparação de texto já equivale à cronológica.
+    const limite = new Date();
+    limite.setDate(limite.getDate() - BACKUP_RETENCAO_DIAS);
+    const limiteStr = limite.toISOString().slice(0, 10);
+    await supabase.from("backups").delete().lt("id", limiteStr);
+  } catch (e) {
+    // Falha no backup não deve atrapalhar o uso normal do app — só registra.
+    console.error("[backup-diario]", e);
+  }
+}
+
+async function listarBackups() {
+  const { data, error } = await supabase.from("backups")
+    .select("id, criado_em").order("id", { ascending: false }).limit(BACKUP_RETENCAO_DIAS);
+  if (error) throw error;
+  return data || [];
+}
+
+async function restaurarBackup(id) {
+  const { data, error } = await supabase.from("backups").select("dados").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Backup não encontrado.");
+  const dados = data.dados || {};
+  BACKUP_CHAVES.forEach(k => {
+    if (dados[k] !== undefined && dados[k] !== null) localStorage.setItem(k, dados[k]);
+  });
+}
+
 const fmtBRL = v => "R$ "+parseFloat(v||0).toFixed(2).replace(".",",");
 const fmtDate = d => d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "-";
 const today = () => {
@@ -2180,6 +2242,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const [modalProd, setModalProd] = useState(null);
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
+  const [perguntarCompartilhar, setPerguntarCompartilhar] = useState(false);
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
@@ -2712,7 +2775,27 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
       {dadosPagamentoOpen && <ModalDadosPagamento onSave={()=>setDadosPagamentoOpen(false)} onClose={()=>setDadosPagamentoOpen(false)} />}
       {opcoesPagamentoOpen && <ModalOpcoesPagamento onClose={()=>setOpcoesPagamentoOpen(false)} />}
       {pagtoOpen && <ModalPagamento os={os} onClose={()=>setPagtoOpen(false)}
-        onSave={novaOS=>{setOs(novaOS);setPagtoOpen(false);onSave&&onSave(novaOS);}} />}
+        onSave={novaOS=>{
+          setOs(novaOS);
+          setPagtoOpen(false);
+          // Pagamento finalizou a OS agora (não é só um adiantamento) — em vez
+          // de deixar o admin ter que ir depois até a aba de OS e filtrar por
+          // "Concluída" pra achar essa mesma OS e compartilhar com o cliente,
+          // já pergunta na hora, sem forçar (dá pra dizer não/fechar).
+          if (novaOS.status === "Concluída" && ini?.status !== "Concluída") setPerguntarCompartilhar(true);
+          onSave&&onSave(novaOS);
+        }} />}
+      {perguntarCompartilhar && (
+        <Modal title="✅ OS concluída!" onClose={()=>setPerguntarCompartilhar(false)} w={380}>
+          <div style={{display:"grid",gap:14}}>
+            <div style={{fontSize:13,color:T.text}}>Deseja compartilhar esta OS com o cliente agora?</div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn v="ghost" onClick={()=>setPerguntarCompartilhar(false)} style={{flex:1}}>Agora não</Btn>
+              <Btn v="blue" onClick={()=>{setPerguntarCompartilhar(false);setPreviaOpen(true);}} style={{flex:1}}>📤 Compartilhar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -3870,6 +3953,53 @@ function BotaoBackup() {
   const [importTxt, setImportTxt] = useState("");
   const [msg, setMsg] = useState("");
 
+  const [backups, setBackups] = useState(null); // null = ainda não buscou
+  const [carregandoBackups, setCarregandoBackups] = useState(false);
+  const [erroBackups, setErroBackups] = useState("");
+  const [fazendoBackup, setFazendoBackup] = useState(false);
+  const [idParaRestaurar, setIdParaRestaurar] = useState(null);
+  const [confirmTexto, setConfirmTexto] = useState("");
+  const [restaurando, setRestaurando] = useState(false);
+
+  const carregarBackups = async () => {
+    setCarregandoBackups(true);
+    setErroBackups("");
+    try {
+      setBackups(await listarBackups());
+    } catch (e) {
+      setErroBackups("Não consegui buscar os backups: " + (e.message || String(e)));
+    }
+    setCarregandoBackups(false);
+  };
+
+  const fazerBackupAgora = async () => {
+    setFazendoBackup(true);
+    setErroBackups("");
+    try {
+      checkRes(await supabase.from("backups").upsert({
+        id: today(), dados: montarSnapshotBackup(), criado_em: new Date().toISOString(),
+      }));
+      toast("Backup de hoje salvo/atualizado!");
+      await carregarBackups();
+    } catch (e) {
+      setErroBackups("Não consegui fazer o backup agora: " + (e.message || String(e)));
+    }
+    setFazendoBackup(false);
+  };
+
+  const confirmarRestaurar = async () => {
+    if (confirmTexto.trim().toUpperCase() !== "RESTAURAR") return;
+    setRestaurando(true);
+    try {
+      await restaurarBackup(idParaRestaurar);
+      toast("Backup restaurado! Recarregando...");
+      setTimeout(()=>window.location.reload(), 1200);
+    } catch (e) {
+      setErroBackups("Não consegui restaurar: " + (e.message || String(e)));
+      setRestaurando(false);
+    }
+  };
+
   const exportar = () => {
     const dados = {
       clientes:  JSON.parse(localStorage.getItem("op_cli")  || "[]"),
@@ -3924,8 +4054,75 @@ function BotaoBackup() {
       }}>💾 Backup</button>
 
       {modal && (
-        <Modal title="💾 Backup dos Dados" onClose={()=>{setModal(false);setMsg("");setImportTxt("");}}>
+        <Modal title="💾 Backup dos Dados" onClose={()=>{setModal(false);setMsg("");setImportTxt("");setIdParaRestaurar(null);}}>
           <div style={{display:"grid",gap:16}}>
+
+            <div style={{background:T.bg,borderRadius:10,padding:14}}>
+              <div style={{fontWeight:700,color:T.text,marginBottom:4}}>🗄️ Backups automáticos (nuvem)</div>
+              <div style={{fontSize:12,color:T.muted,marginBottom:10}}>
+                Todo dia, na primeira vez que um admin abre o app, uma cópia completa dos dados
+                (OS, clientes, veículos, produtos, pagamentos, agenda) é salva sozinha no servidor.
+                Ficam guardados os últimos {BACKUP_RETENCAO_DIAS} dias.
+              </div>
+
+              {idParaRestaurar ? (
+                <div style={{display:"grid",gap:10}}>
+                  <div style={{background:T.redLo,border:"1px solid "+T.red+"44",borderRadius:8,
+                    padding:12,fontSize:12,color:T.text}}>
+                    Isso vai substituir <b>todos os dados atuais</b> (OS, clientes, pagamentos,
+                    tudo) pela versão salva em <b>{fmtDate(idParaRestaurar)}</b>. Qualquer coisa
+                    feita depois dessa data será perdida. Não pode ser desfeito.
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.muted,marginBottom:6}}>Digite RESTAURAR para confirmar:</div>
+                    <input value={confirmTexto} onChange={e=>setConfirmTexto(e.target.value)}
+                      placeholder="RESTAURAR"
+                      style={{width:"100%",background:T.surface,border:"1px solid "+T.border,borderRadius:8,
+                        color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}} />
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn v="ghost" onClick={()=>{setIdParaRestaurar(null);setConfirmTexto("");setErroBackups("");}} style={{flex:1}}>Cancelar</Btn>
+                    <Btn v="red" disabled={confirmTexto.trim().toUpperCase()!=="RESTAURAR"||restaurando}
+                      onClick={confirmarRestaurar} style={{flex:1}}>
+                      {restaurando ? "Restaurando..." : "Restaurar"}
+                    </Btn>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                    <Btn v="ghost" sz="sm" onClick={carregarBackups} disabled={carregandoBackups}>
+                      {carregandoBackups ? "Buscando..." : "🔄 Ver backups disponíveis"}
+                    </Btn>
+                    <Btn v="ghost" sz="sm" onClick={fazerBackupAgora} disabled={fazendoBackup}>
+                      {fazendoBackup ? "Salvando..." : "📸 Fazer backup agora"}
+                    </Btn>
+                  </div>
+                  {backups && backups.length === 0 && (
+                    <div style={{fontSize:12,color:T.muted}}>Nenhum backup salvo ainda.</div>
+                  )}
+                  {backups && backups.length > 0 && (
+                    <div style={{display:"grid",gap:6}}>
+                      {backups.map(b => (
+                        <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                          background:T.surface,borderRadius:8,padding:"8px 10px"}}>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:700,color:T.text}}>
+                              {fmtDate(b.id)}{b.id===today()?" (hoje)":""}
+                            </div>
+                            <div style={{fontSize:10,color:T.muted}}>
+                              salvo às {b.criado_em ? new Date(b.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "-"}
+                            </div>
+                          </div>
+                          <Btn v="orange" sz="sm" onClick={()=>{setIdParaRestaurar(b.id);setConfirmTexto("");}}>Restaurar</Btn>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {erroBackups && <div style={{fontSize:12,color:T.red,marginTop:8}}>{erroBackups}</div>}
+            </div>
 
             <div style={{background:T.bg,borderRadius:10,padding:14}}>
               <div style={{fontWeight:700,color:T.text,marginBottom:4}}>📤 Exportar</div>
@@ -4527,6 +4724,27 @@ export default function App() {
     window.addEventListener("switchTab", handler);
     return () => window.removeEventListener("switchTab", handler);
   },[]);
+
+  // O celular costuma ficar com o app aberto e logado por dias seguidos, sem
+  // nunca voltar pra tela de login — então checar o backup diário só no
+  // login não é suficiente pra pegar a virada do dia. Este efeito reforça a
+  // checagem: assim que o admin entra, toda vez que o app volta a ficar
+  // visível (tela acesa de novo, troca de aba do navegador) e a cada 30 min
+  // como rede de segurança. verificarBackupDiario() já não faz nada se o
+  // backup de hoje já existir, então repetir a chamada não tem custo.
+  useEffect(()=>{
+    if (!usuario || usuario.nivel !== "admin") return;
+    verificarBackupDiario();
+    const checar = () => { if (document.visibilityState === "visible") verificarBackupDiario(); };
+    document.addEventListener("visibilitychange", checar);
+    window.addEventListener("focus", checar);
+    const intervalId = setInterval(verificarBackupDiario, 30*60*1000);
+    return () => {
+      document.removeEventListener("visibilitychange", checar);
+      window.removeEventListener("focus", checar);
+      clearInterval(intervalId);
+    };
+  },[usuario]);
 
   if (carregandoSessao) {
     return <><GlobalStyle/><div style={{minHeight:"100vh",background:T.bg,color:T.sub,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>Carregando...</div></>;
