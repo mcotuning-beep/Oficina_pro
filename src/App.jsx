@@ -2243,6 +2243,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
   const [previaOpen, setPreviaOpen] = useState(false);
   const [pagtoOpen, setPagtoOpen] = useState(false);
   const [perguntarCompartilhar, setPerguntarCompartilhar] = useState(false);
+  const [osConcluidaPendente, setOsConcluidaPendente] = useState(null);
   const [fiscalOpen, setFiscalOpen] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [dadosPagamentoOpen, setDadosPagamentoOpen] = useState(false);
@@ -2769,7 +2770,10 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
       )}
 
       {modalProd && <ModalNovoProduto nome={modalProd} onClose={()=>setModalProd(null)} onSave={p=>{setModalProd(null);addProduto(p);}} />}
-      {previaOpen && <ModalImpressao os={os} onClose={()=>setPreviaOpen(false)} />}
+      {previaOpen && <ModalImpressao os={os} onClose={()=>{
+        setPreviaOpen(false);
+        if (osConcluidaPendente) { onSave&&onSave(osConcluidaPendente); setOsConcluidaPendente(null); }
+      }} />}
       {fiscalOpen && <ModalDadosFiscais os={os} onClose={()=>setFiscalOpen(false)} onSave={f=>{setOs(o=>({...o,fiscal:f}));setFiscalOpen(false);}} />}
       {checklistOpen && <ModalChecklistEntrada os={os} onClose={()=>setChecklistOpen(false)} onSave={c=>{setOs(o=>({...o,checklist:c}));setChecklistOpen(false);}} />}
       {dadosPagamentoOpen && <ModalDadosPagamento onSave={()=>setDadosPagamentoOpen(false)} onClose={()=>setDadosPagamentoOpen(false)} />}
@@ -2782,15 +2786,30 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
           // de deixar o admin ter que ir depois até a aba de OS e filtrar por
           // "Concluída" pra achar essa mesma OS e compartilhar com o cliente,
           // já pergunta na hora, sem forçar (dá pra dizer não/fechar).
-          if (novaOS.status === "Concluída" && ini?.status !== "Concluída") setPerguntarCompartilhar(true);
-          onSave&&onSave(novaOS);
+          // IMPORTANTE: só chamamos onSave (que fecha a tela) depois que essa
+          // pergunta for respondida — senão o onSave do componente pai fecha/
+          // desmonta a TelaOS na hora e a pergunta nunca chega a aparecer.
+          if (novaOS.status === "Concluída" && ini?.status !== "Concluída") {
+            setOsConcluidaPendente(novaOS);
+            setPerguntarCompartilhar(true);
+          } else {
+            onSave&&onSave(novaOS);
+          }
         }} />}
       {perguntarCompartilhar && (
-        <Modal title="✅ OS concluída!" onClose={()=>setPerguntarCompartilhar(false)} w={380}>
+        <Modal title="✅ OS concluída!" onClose={()=>{
+          setPerguntarCompartilhar(false);
+          onSave&&onSave(osConcluidaPendente);
+          setOsConcluidaPendente(null);
+        }} w={380}>
           <div style={{display:"grid",gap:14}}>
             <div style={{fontSize:13,color:T.text}}>Deseja compartilhar esta OS com o cliente agora?</div>
             <div style={{display:"flex",gap:8}}>
-              <Btn v="ghost" onClick={()=>setPerguntarCompartilhar(false)} style={{flex:1}}>Agora não</Btn>
+              <Btn v="ghost" onClick={()=>{
+                setPerguntarCompartilhar(false);
+                onSave&&onSave(osConcluidaPendente);
+                setOsConcluidaPendente(null);
+              }} style={{flex:1}}>Agora não</Btn>
               <Btn v="blue" onClick={()=>{setPerguntarCompartilhar(false);setPreviaOpen(true);}} style={{flex:1}}>📤 Compartilhar</Btn>
             </div>
           </div>
