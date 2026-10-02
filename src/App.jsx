@@ -124,6 +124,14 @@ async function pushSync(key, cfg, oldStr, newStr) {
     const oldArr = safeParseArr(oldStr), newArr = safeParseArr(newStr);
     const newIds = new Set(newArr.map(r=>r.id));
     const removed = oldArr.map(r=>r.id).filter(id=>!newIds.has(id));
+    // Trava de segurança: ninguém apaga um cadastro inteiro de uma vez clicando
+    // em algo no app — isso só acontece quando um bug zera o array local por
+    // engano (ex.: uma sincronização que leu "vazio" do servidor por engano,
+    // como já aconteceu). Em vez de replicar esse apagão lá no servidor,
+    // recusa e deixa a gravação como pendente — nada é excluído de verdade.
+    if (oldArr.length >= 5 && newArr.length === 0 && removed.length === oldArr.length) {
+      throw new Error("sincronizacao recusada: "+removed.length+" registro(s) de "+key+" seriam apagados de uma so vez — parece bug, nao acao do usuario");
+    }
     const rows = newArr.filter(r=>r && r.id).map(cfg.toDb);
     if (rows.length) checkRes(await supabase.from(cfg.table).upsert(rows));
     if (removed.length) await apagarNoServidor(cfg.table, removed);
@@ -263,6 +271,20 @@ async function pullAll() {
       supabase.from("dados_pagamento").select("*").eq("id",1).maybeSingle(),
       supabase.from("config").select("*").eq("chave","precos_peliculas").maybeSingle(),
     ]);
+    // O cliente do Supabase NÃO lança exceção quando uma consulta falha (sessão
+    // expirada, RLS, instabilidade de rede) — ele só devolve { data: null, error }.
+    // Tratar "data: null" como "a tabela está vazia" e sobrescrever o aparelho
+    // com isso é como o app inteiro aparecia zerado sem nenhum dado ter sido
+    // realmente apagado no servidor. Por isso cada leitura abaixo é ignorada
+    // (mantém o que já está salvo no aparelho) sempre que vier com erro.
+    const falhasLeitura = [];
+    [["clientes",cli],["veiculos",vei],["produtos",prd],["ordens",ord],["taxas",tax],["compras",cmp],
+     ["agenda",agd],["config geral",cfgGeral],["config opcoes_pagamento",cfgOpcoes],
+     ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas]].forEach(([nome,r]) => {
+      if (r && r.error) { falhasLeitura.push(nome); registrarErroSync("pull:"+nome, r.error); }
+    });
+    if (falhasLeitura.length) avisarErroSync();
+
     // Ainda pendente depois da tentativa de flush acima: mantém o que está
     // salvo no aparelho em vez de sobrescrever com dados remotos incompletos.
     const outbox = getOutbox();
@@ -270,30 +292,42 @@ async function pullAll() {
 
     // As salvaguardas abaixo dependem da rede; ficam ANTES da pausa para que a
     // janela pausada seja só o trecho síncrono que aplica os dados na tela.
-    const localTax = db.get(K.taxas);
-    const subirTaxas = (tax.data||[]).length === 0 && localTax.length > 0;
-    if (subirTaxas) await supabase.from("taxas").upsert(localTax.map(SYNC_TABLES.op_taxas.toDb));
-    const localCmp = db.get(K.compras);
-    const subirCompras = (cmp.data||[]).length === 0 && localCmp.length > 0;
-    if (subirCompras) await supabase.from("compras").upsert(localCmp.map(SYNC_TABLES.op_compras.toDb));
+    // Vale tanto pra uma tabela genuinamente vazia (ex.: taxas configuradas
+    // antes da migração) quanto — principalmente — pra proteger clientes,
+    // veículos, produtos e ordens: essas quatro são o dado mais crítico do
+    // app, e "remoto veio vazio" nunca pode, sozinho, apagar o que já está
+    // salvo no aparelho.
+    const salvaguardas = {};
+    for (const [key, resultado, localKey] of [
+      ["op_cli", cli, K.clientes], ["op_vei", vei, K.veiculos],
+      ["op_prd", prd, K.produtos], ["op_ord", ord, K.ordens],
+      ["op_taxas", tax, K.taxas], ["op_compras", cmp, K.compras],
+    ]) {
+      if (resultado && resultado.error) { salvaguardas[key] = "erro"; continue; }
+      const local = db.get(localKey);
+      const remoto = resultado.data || [];
+      if (remoto.length === 0 && local.length > 0) {
+        salvaguardas[key] = "subiu";
+        await supabase.from(SYNC_TABLES[key].table).upsert(local.map(SYNC_TABLES[key].toDb));
+      }
+    }
 
     SYNC_PAUSED = true;
-    applyIfNotPending("op_cli", JSON.stringify((cli.data||[]).map(SYNC_TABLES.op_cli.fromDb)));
-    applyIfNotPending("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
-    applyIfNotPending("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
-    applyIfNotPending("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
-    // Salvaguarda: se a tabela remota ainda estiver vazia mas já existir algo salvo
-    // neste aparelho (ex.: taxas configuradas antes da migração), preserva o local
-    // (o envio pro Supabase já aconteceu acima, antes da pausa).
-    if (!subirTaxas) applyIfNotPending("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
-    if (!subirCompras) applyIfNotPending("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
-    const agendaObj = {};
-    (agd.data||[]).forEach(r=>{ try { agendaObj[r.id] = JSON.parse(r.texto); } catch { agendaObj[r.id] = r.texto; } });
-    applyIfNotPending("op_agenda", JSON.stringify(agendaObj));
-    applyIfNotPending("op_config", JSON.stringify((cfgGeral.data && cfgGeral.data.valor) || {}));
-    applyIfNotPending("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
-    applyIfNotPending("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
-    applyIfNotPending("op_precos_peliculas", JSON.stringify((cfgPrecosPeliculas.data && cfgPrecosPeliculas.data.valor) || PRECOS_PELICULAS_PADRAO));
+    if (!salvaguardas.op_cli) applyIfNotPending("op_cli", JSON.stringify((cli.data||[]).map(SYNC_TABLES.op_cli.fromDb)));
+    if (!salvaguardas.op_vei) applyIfNotPending("op_vei", JSON.stringify((vei.data||[]).map(SYNC_TABLES.op_vei.fromDb)));
+    if (!salvaguardas.op_prd) applyIfNotPending("op_prd", JSON.stringify((prd.data||[]).map(SYNC_TABLES.op_prd.fromDb)));
+    if (!salvaguardas.op_ord) applyIfNotPending("op_ord", JSON.stringify((ord.data||[]).map(SYNC_TABLES.op_ord.fromDb)));
+    if (!salvaguardas.op_taxas) applyIfNotPending("op_taxas", JSON.stringify((tax.data||[]).map(SYNC_TABLES.op_taxas.fromDb)));
+    if (!salvaguardas.op_compras) applyIfNotPending("op_compras", JSON.stringify((cmp.data||[]).map(SYNC_TABLES.op_compras.fromDb)));
+    if (!(agd && agd.error)) {
+      const agendaObj = {};
+      (agd.data||[]).forEach(r=>{ try { agendaObj[r.id] = JSON.parse(r.texto); } catch { agendaObj[r.id] = r.texto; } });
+      applyIfNotPending("op_agenda", JSON.stringify(agendaObj));
+    }
+    if (!(cfgGeral && cfgGeral.error)) applyIfNotPending("op_config", JSON.stringify((cfgGeral.data && cfgGeral.data.valor) || {}));
+    if (!(cfgOpcoes && cfgOpcoes.error)) applyIfNotPending("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
+    if (!(pag && pag.error)) applyIfNotPending("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
+    if (!(cfgPrecosPeliculas && cfgPrecosPeliculas.error)) applyIfNotPending("op_precos_peliculas", JSON.stringify((cfgPrecosPeliculas.data && cfgPrecosPeliculas.data.valor) || PRECOS_PELICULAS_PADRAO));
   } finally {
     SYNC_PAUSED = false;
   }
