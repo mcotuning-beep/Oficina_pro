@@ -5261,6 +5261,11 @@ export default function App() {
     return () => window.removeEventListener("switchTab", handler);
   },[]);
 
+  // Login restrito só à aba Cartões (ex.: Carol): nunca deixa cair em outra aba.
+  useEffect(()=>{
+    if (usuario && usuario.nivel === "cartoes") setAba("cartoes");
+  },[usuario]);
+
   // O celular costuma ficar com o app aberto e logado por dias seguidos, sem
   // nunca voltar pra tela de login — então checar o backup diário só no
   // login não é suficiente pra pegar a virada do dia. Este efeito reforça a
@@ -5291,7 +5296,8 @@ export default function App() {
   }
 
   const isAdmin = usuario.nivel==="admin";
-  const abas = [
+  const somenteCartoes = usuario.nivel==="cartoes";
+  const abas = somenteCartoes ? [{id:"cartoes",icon:"💳",label:"Cartões"}] : [
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"compras",icon:"🛒",label:"Compras"},
     {id:"agenda",icon:"📅",label:"Agenda"},
@@ -5322,7 +5328,7 @@ export default function App() {
             fontWeight:800,fontSize:12,whiteSpace:"nowrap"
           }}>Sair</button>
         </div>
-          <div style={{display:"flex",gap:1,flexWrap:"wrap"}}>
+          {!somenteCartoes && <div style={{display:"flex",gap:1,flexWrap:"wrap"}}>
             {abas.map(a => (
               <button key={a.id} onClick={()=>setAba(a.id)} style={{
                 background:aba===a.id?T.accentLo:"transparent",border:"none",
@@ -5332,19 +5338,19 @@ export default function App() {
                 flexShrink:0,whiteSpace:"nowrap",
               }}>{a.icon} {a.label}</button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
       <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 12px"}}>
-        {aba==="ordens" && <AbaOrdens nivelAcesso={usuario.nivel} />}
-        {aba==="compras" && <AbaCompras />}
-        {aba==="agenda" && <AbaAgenda />}
-        {aba==="produtos" && <AbaProdutos />}
-        {aba==="simulador" && <AbaSimulador />}
+        {aba==="ordens" && !somenteCartoes && <AbaOrdens nivelAcesso={usuario.nivel} />}
+        {aba==="compras" && !somenteCartoes && <AbaCompras />}
+        {aba==="agenda" && !somenteCartoes && <AbaAgenda />}
+        {aba==="produtos" && !somenteCartoes && <AbaProdutos />}
+        {aba==="simulador" && !somenteCartoes && <AbaSimulador />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
-        {aba==="analise" && <AbaAnalise />}
-        {aba==="cartoes" && isAdmin && <AbaCartoes />}
-        {aba==="precos_peliculas" && <AbaPrecosPeliculas isAdmin={isAdmin} />}
+        {aba==="analise" && !somenteCartoes && <AbaAnalise />}
+        {aba==="cartoes" && (isAdmin || somenteCartoes) && <AbaCartoes />}
+        {aba==="precos_peliculas" && !somenteCartoes && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
       <Toast />
     </div></>
