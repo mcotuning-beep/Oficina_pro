@@ -8,7 +8,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos", cartoesMetas:"op_cartoes_metas" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -99,6 +99,7 @@ const SYNC_TABLES = {
   op_cartoes:           { table:"cartoes",            kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
   op_cartoes_compras:   { table:"cartoes_compras",    kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
   op_cartoes_pagamentos:{ table:"cartoes_pagamentos", kind:"id1" },
+  op_cartoes_metas:     { table:"config", kind:"row", chave:"cartoes_metas" },
 };
 
 // O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
@@ -261,7 +262,7 @@ async function pullAll() {
         setOutboxEntry(key, null, null);
       } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
     }
-    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag] = await Promise.all([
+    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag, cfgCartoesMetas] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
       supabase.from("produtos").select("*"),
@@ -276,6 +277,7 @@ async function pullAll() {
       supabase.from("cartoes").select("*"),
       supabase.from("cartoes_compras").select("*"),
       supabase.from("cartoes_pagamentos").select("*").eq("id",1).maybeSingle(),
+      supabase.from("config").select("*").eq("chave","cartoes_metas").maybeSingle(),
     ]);
     // O cliente do Supabase NÃO lança exceção quando uma consulta falha (sessão
     // expirada, RLS, instabilidade de rede) — ele só devolve { data: null, error }.
@@ -287,7 +289,7 @@ async function pullAll() {
     [["clientes",cli],["veiculos",vei],["produtos",prd],["ordens",ord],["taxas",tax],["compras",cmp],
      ["agenda",agd],["config geral",cfgGeral],["config opcoes_pagamento",cfgOpcoes],
      ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas],
-     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag]].forEach(([nome,r]) => {
+     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag],["config cartoes_metas",cfgCartoesMetas]].forEach(([nome,r]) => {
       if (r && r.error) { falhasLeitura.push(nome); registrarErroSync("pull:"+nome, r.error); }
     });
     if (falhasLeitura.length) avisarErroSync();
@@ -339,6 +341,7 @@ async function pullAll() {
     if (!salvaguardas.op_cartoes) applyIfNotPending("op_cartoes", JSON.stringify((ctCards.data||[]).map(SYNC_TABLES.op_cartoes.fromDb)));
     if (!salvaguardas.op_cartoes_compras) applyIfNotPending("op_cartoes_compras", JSON.stringify((ctCompras.data||[]).map(SYNC_TABLES.op_cartoes_compras.fromDb)));
     if (!(ctPag && ctPag.error)) applyIfNotPending("op_cartoes_pagamentos", JSON.stringify((ctPag.data && ctPag.data.dados) || {}));
+    if (!(cfgCartoesMetas && cfgCartoesMetas.error)) applyIfNotPending("op_cartoes_metas", JSON.stringify((cfgCartoesMetas.data && cfgCartoesMetas.data.valor) || {}));
   } finally {
     SYNC_PAUSED = false;
   }
@@ -3813,6 +3816,57 @@ const getCartoes = () => {
 const getCartoesPagamentos = () => { try { return JSON.parse(localStorage.getItem(K.cartoesPagamentos) || "{}"); } catch { return {}; } };
 const setCartoesPagamentos = obj => localStorage.setItem(K.cartoesPagamentos, JSON.stringify(obj));
 
+// Objetivo de gasto do mês, por categoria (oficina/particular) — { oficina: 1000, particular: 800 }.
+const getCartoesMetas = () => { try { return JSON.parse(localStorage.getItem(K.cartoesMetas) || "{}"); } catch { return {}; } };
+const setCartoesMetas = obj => localStorage.setItem(K.cartoesMetas, JSON.stringify(obj));
+
+// Verde até 75% do objetivo, laranja de 75% a 100%, vermelho ao bater/passar.
+// Sem objetivo definido (meta<=0): cor neutra, sem barra de alerta.
+const corObjetivoCT = (gasto, meta) => {
+  if (!meta || meta <= 0) return T.muted;
+  const pct = gasto / meta;
+  if (pct >= 1) return T.red;
+  if (pct >= 0.75) return T.orange;
+  return T.green;
+};
+
+function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta }) {
+  const [editando, setEditando] = useState(false);
+  const [valorTmp, setValorTmp] = useState(meta ? String(meta) : "");
+  const cor = corObjetivoCT(gasto, meta);
+  const pct = meta > 0 ? Math.min(1, gasto / meta) : 0;
+  const confirmar = () => {
+    const v = parseFloat(String(valorTmp).replace(",", "."));
+    onChangeMeta(v > 0 ? v : 0);
+    setEditando(false);
+  };
+  return (
+    <div style={{display:"grid",gap:6}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <span style={{fontSize:12,color:T.muted,fontWeight:700}}>{emoji} {label}</span>
+        {editando ? (
+          <input autoFocus type="number" value={valorTmp} onChange={e=>setValorTmp(e.target.value)}
+            onBlur={confirmar} onKeyDown={e=>{ if (e.key==="Enter") confirmar(); }}
+            placeholder="objetivo R$"
+            style={{width:100,background:T.bg,border:"1px solid "+T.border,borderRadius:6,padding:"4px 6px",color:T.text,fontFamily:"inherit",fontSize:12}} />
+        ) : (
+          <button onClick={()=>{ setValorTmp(meta?String(meta):""); setEditando(true); }}
+            style={{background:"none",border:"none",color:T.muted,fontSize:11,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",padding:0}}>
+            {meta>0 ? `objetivo ${fmtBRL(meta)}` : "definir objetivo"}
+          </button>
+        )}
+      </div>
+      <div style={{height:8,borderRadius:4,background:T.bg,overflow:"hidden"}}>
+        <div style={{height:"100%",width:(meta>0?pct*100:0)+"%",background:cor,borderRadius:4,transition:"width .2s"}} />
+      </div>
+      <div style={{fontSize:14,fontWeight:800,color:cor}}>
+        {fmtBRL(gasto)}
+        {meta>0 && <span style={{fontSize:11,fontWeight:600,color:T.muted}}> / {fmtBRL(meta)}</span>}
+      </div>
+    </div>
+  );
+}
+
 // Expande uma compra em uma entrada por parcela.
 const parcelasDeCT = compra => {
   const out = [];
@@ -4002,10 +4056,27 @@ function AbaCartoes() {
   const [cards, setCards] = useState(getCartoes);
   const [compras, setComprasState] = useState(() => db.get(K.cartoesCompras));
   const [pagamentos, setPagamentosState] = useState(getCartoesPagamentos);
+  const [metas, setMetasState] = useState(getCartoesMetas);
 
   const salvarCards = novo => { db.set(K.cartoes, novo); setCards(novo); };
   const salvarCompras = novo => { db.set(K.cartoesCompras, novo); setComprasState(novo); };
   const salvarPagamentos = novo => { setCartoesPagamentos(novo); setPagamentosState(novo); };
+  const salvarMetas = novo => { setCartoesMetas(novo); setMetasState(novo); };
+
+  // Objetivo de gasto do mês: soma o valor total de cada compra (todas as
+  // formas — cartões de crédito e débito/dinheiro) pela data em que ela foi
+  // feita, não pela competência da fatura — é "quanto comprometi esse mês",
+  // não "quanto vai fechar na fatura esse mês" (que pode cair em mês diferente
+  // por causa do fechamento do cartão).
+  const hojeObj = new Date();
+  const mesAtualStr = hojeObj.getFullYear()+"-"+String(hojeObj.getMonth()+1).padStart(2,"0");
+  const gastosMes = { oficina: 0, particular: 0 };
+  compras.forEach(c => {
+    if (!c.data || !c.data.startsWith(mesAtualStr)) return;
+    const valorTotal = (c.valorParcela||0) * (c.parcelas||1);
+    if (c.categoria === "particular") gastosMes.particular += valorTotal;
+    else gastosMes.oficina += valorTotal;
+  });
 
   const cardById = id => cards.find(c => c.id === id) || null;
   const cardDebito = () => cards.find(c => c.tipo === "debito") || null;
@@ -4077,6 +4148,14 @@ function AbaCartoes() {
 
   return (
     <div>
+      <Card style={{marginBottom:16,padding:14,display:"grid",gap:14}}>
+        <div style={{fontWeight:800,color:T.text}}>🎯 Objetivo do mês — {labelMesCTCap(competenciaCalendarioCT(hojeObj))}</div>
+        <LinhaObjetivoCartao emoji="🔧" label="Oficina" gasto={gastosMes.oficina} meta={metas.oficina||0}
+          onChangeMeta={v => salvarMetas({...metas, oficina:v})} />
+        <LinhaObjetivoCartao emoji="🏠" label="Particular" gasto={gastosMes.particular} meta={metas.particular||0}
+          onChangeMeta={v => salvarMetas({...metas, particular:v})} />
+      </Card>
+
       {cDebito && (
         <Card style={{marginBottom:16,padding:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
