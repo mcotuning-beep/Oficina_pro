@@ -796,9 +796,9 @@ function Toast() {
 }
 const toast = m => _setToast && _setToast(m);
 
-function Modal({ title, onClose, children, w=560 }) {
+function Modal({ title, onClose, children, w=560, z=200 }) {
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:200,
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:z,
       display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:"1px solid "+T.border,
         borderRadius:16,width:"100%",maxWidth:w,maxHeight:"92vh",overflowY:"auto"}}>
@@ -3939,7 +3939,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
   };
 
   return (
-    <Modal title="＋ Nova compra" onClose={onClose} w={460}>
+    <Modal title="＋ Nova compra" onClose={onClose} w={460} z={210}>
       <div style={{display:"grid",gap:14}}>
         <Inp label={parceladoEfetivo && parcelaAtual>1 ? "Valor de cada parcela (R$)" : "Valor total (R$)"}
           type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
