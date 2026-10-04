@@ -8,7 +8,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -96,6 +96,9 @@ const SYNC_TABLES = {
   op_pagamento:   { table:"dados_pagamento", kind:"id1" },
   op_agenda:      { table:"agenda", kind:"keyed" },
   op_precos_peliculas: { table:"config", kind:"row", chave:"precos_peliculas" },
+  op_cartoes:           { table:"cartoes",            kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
+  op_cartoes_compras:   { table:"cartoes_compras",    kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
+  op_cartoes_pagamentos:{ table:"cartoes_pagamentos", kind:"id1" },
 };
 
 // O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
@@ -258,7 +261,7 @@ async function pullAll() {
         setOutboxEntry(key, null, null);
       } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
     }
-    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas] = await Promise.all([
+    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
       supabase.from("produtos").select("*"),
@@ -270,6 +273,9 @@ async function pullAll() {
       supabase.from("config").select("*").eq("chave","opcoes_pagamento").maybeSingle(),
       supabase.from("dados_pagamento").select("*").eq("id",1).maybeSingle(),
       supabase.from("config").select("*").eq("chave","precos_peliculas").maybeSingle(),
+      supabase.from("cartoes").select("*"),
+      supabase.from("cartoes_compras").select("*"),
+      supabase.from("cartoes_pagamentos").select("*").eq("id",1).maybeSingle(),
     ]);
     // O cliente do Supabase NÃO lança exceção quando uma consulta falha (sessão
     // expirada, RLS, instabilidade de rede) — ele só devolve { data: null, error }.
@@ -280,7 +286,8 @@ async function pullAll() {
     const falhasLeitura = [];
     [["clientes",cli],["veiculos",vei],["produtos",prd],["ordens",ord],["taxas",tax],["compras",cmp],
      ["agenda",agd],["config geral",cfgGeral],["config opcoes_pagamento",cfgOpcoes],
-     ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas]].forEach(([nome,r]) => {
+     ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas],
+     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag]].forEach(([nome,r]) => {
       if (r && r.error) { falhasLeitura.push(nome); registrarErroSync("pull:"+nome, r.error); }
     });
     if (falhasLeitura.length) avisarErroSync();
@@ -302,6 +309,7 @@ async function pullAll() {
       ["op_cli", cli, K.clientes], ["op_vei", vei, K.veiculos],
       ["op_prd", prd, K.produtos], ["op_ord", ord, K.ordens],
       ["op_taxas", tax, K.taxas], ["op_compras", cmp, K.compras],
+      ["op_cartoes", ctCards, K.cartoes], ["op_cartoes_compras", ctCompras, K.cartoesCompras],
     ]) {
       if (resultado && resultado.error) { salvaguardas[key] = "erro"; continue; }
       const local = db.get(localKey);
@@ -328,6 +336,9 @@ async function pullAll() {
     if (!(cfgOpcoes && cfgOpcoes.error)) applyIfNotPending("op_opcoes_pgto", JSON.stringify((cfgOpcoes.data && cfgOpcoes.data.valor) || []));
     if (!(pag && pag.error)) applyIfNotPending("op_pagamento", JSON.stringify((pag.data && pag.data.dados) || {}));
     if (!(cfgPrecosPeliculas && cfgPrecosPeliculas.error)) applyIfNotPending("op_precos_peliculas", JSON.stringify((cfgPrecosPeliculas.data && cfgPrecosPeliculas.data.valor) || PRECOS_PELICULAS_PADRAO));
+    if (!salvaguardas.op_cartoes) applyIfNotPending("op_cartoes", JSON.stringify((ctCards.data||[]).map(SYNC_TABLES.op_cartoes.fromDb)));
+    if (!salvaguardas.op_cartoes_compras) applyIfNotPending("op_cartoes_compras", JSON.stringify((ctCompras.data||[]).map(SYNC_TABLES.op_cartoes_compras.fromDb)));
+    if (!(ctPag && ctPag.error)) applyIfNotPending("op_cartoes_pagamentos", JSON.stringify((ctPag.data && ctPag.data.dados) || {}));
   } finally {
     SYNC_PAUSED = false;
   }
@@ -3762,6 +3773,478 @@ function AbaCompras() {
   );
 }
 
+// ── ABA CARTÕES (cartões de crédito + débito/dinheiro, compartilhada com a Carol) ──
+// Portado do protótipo validado em Artifact — mesma lógica de competência
+// (mês de fatura) e as mesmas regras de débito/dinheiro (sem fechamento, sem
+// parcelamento, cai direto no mês civil). Sincroniza via SYNC_TABLES como o
+// resto do app (localStorage.setItem com a chave op_cartoes* já sobe sozinho).
+const CARTOES_CORES = ["#F59E0B","#3B82F6","#EF4444","#A855F7","#22C55E","#14B8A6"];
+const MESES_ABREV_CT = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+
+const normalizeMesCT = (ano, mes) => { const dt = new Date(ano, mes, 1); return { ano: dt.getFullYear(), mes: dt.getMonth() }; };
+const addMesesCT = (comp, n) => normalizeMesCT(comp.ano, comp.mes + n);
+const sameCompCT = (a, b) => a.ano === b.ano && a.mes === b.mes;
+const competenciaParaCT = (dataObj, fechamento) => {
+  let mes = dataObj.getMonth(), ano = dataObj.getFullYear();
+  if (dataObj.getDate() > fechamento) mes += 1;
+  return normalizeMesCT(ano, mes);
+};
+const competenciaAtualCT = fechamento => competenciaParaCT(new Date(), fechamento);
+const competenciaDaCompraCT = (dataIso, fechamento) => competenciaParaCT(new Date(dataIso+"T12:00:00"), fechamento);
+const competenciaCalendarioCT = dataObj => normalizeMesCT(dataObj.getFullYear(), dataObj.getMonth());
+const competenciaAtualCard = card => card.tipo === "debito" ? competenciaCalendarioCT(new Date()) : competenciaAtualCT(card.fechamento);
+const competenciaDaCompraCard = (dataIso, card) => card.tipo === "debito" ? competenciaCalendarioCT(new Date(dataIso+"T12:00:00")) : competenciaDaCompraCT(dataIso, card.fechamento);
+const labelMesCT = comp => MESES_ABREV_CT[comp.mes];
+const labelMesCTCap = comp => { const m = labelMesCT(comp); return m.charAt(0).toUpperCase()+m.slice(1); };
+const chavePagamentoCT = (cardId, comp) => cardId+"|"+comp.ano+"-"+comp.mes;
+const dataVencimentoFaturaCT = (comp, card) => { let mesVenc = comp.mes; if (card.vencimento < card.fechamento) mesVenc += 1; return new Date(comp.ano, mesVenc, card.vencimento); };
+const competenciaAPagarCT = fechamento => addMesesCT(competenciaAtualCT(fechamento), -1);
+
+// Quem já usava a aba antes da conta "Débito/Dinheiro" existir não tem essa
+// conta nos próprios dados — cria na hora de ler, 1x, se estiver faltando.
+const getCartoes = () => {
+  const cards = db.get(K.cartoes);
+  if (!cards.some(c => c.tipo === "debito")) {
+    cards.push({ id: uid(), nome: "Débito/Dinheiro", tipo: "debito", bandeira: "—", fechamento: 1, vencimento: 1, cor: CARTOES_CORES[5] });
+    db.set(K.cartoes, cards);
+  }
+  return cards;
+};
+const getCartoesPagamentos = () => { try { return JSON.parse(localStorage.getItem(K.cartoesPagamentos) || "{}"); } catch { return {}; } };
+const setCartoesPagamentos = obj => localStorage.setItem(K.cartoesPagamentos, JSON.stringify(obj));
+
+// Expande uma compra em uma entrada por parcela.
+const parcelasDeCT = compra => {
+  const out = [];
+  for (let i = compra.parcelaAncora; i <= compra.parcelas; i++) {
+    out.push({
+      compraId: compra.id, cartaoId: compra.cartaoId, local: compra.local, descricao: compra.descricao,
+      categoria: compra.categoria, data: compra.data, quemComprou: compra.quemComprou, formaPagamento: compra.formaPagamento,
+      parcelaIndex: i, totalParcelas: compra.parcelas, valorParcela: compra.valorParcela,
+      competencia: addMesesCT(compra.competenciaAncora, i - compra.parcelaAncora),
+    });
+  }
+  return out;
+};
+const computeFaturaCompetenciaCT = (compras, cardId, alvo) => {
+  let total = 0, oficina = 0, particular = 0; const itens = [];
+  compras.filter(c => c.cartaoId === cardId).forEach(c => {
+    parcelasDeCT(c).forEach(p => {
+      if (sameCompCT(p.competencia, alvo)) {
+        total += p.valorParcela;
+        if (p.categoria === "oficina") oficina += p.valorParcela; else particular += p.valorParcela;
+        itens.push(p);
+      }
+    });
+  });
+  itens.sort((a,b) => b.data.localeCompare(a.data));
+  return { total, oficina, particular, itens, competencia: alvo };
+};
+
+function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
+  const [valor, setValor] = useState("");
+  const [local, setLocal] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [quem, setQuem] = useState("Marcelo");
+  const [categoria, setCategoria] = useState("oficina");
+  const [cartaoId, setCartaoId] = useState(cartaoIdInicial || (cards[0] && cards[0].id) || "");
+  const [forma, setForma] = useState("debito");
+  const [data, setData] = useState(today());
+  const [parcelado, setParcelado] = useState(false);
+  const [parcelasTotal, setParcelasTotal] = useState(2);
+  const [parcelaAtual, setParcelaAtual] = useState(1);
+
+  const card = cards.find(c => c.id === cartaoId) || null;
+  const isDebito = card && card.tipo === "debito";
+  const parceladoEfetivo = parcelado && !isDebito;
+
+  let preview = "";
+  if (parceladoEfetivo && card) {
+    const total = Math.max(2, parseInt(parcelasTotal,10)||2);
+    const atual = Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1));
+    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
+    const final = addMesesCT(ancora, total - atual);
+    preview = `Parcela ${atual}/${total} cai na fatura de ${labelMesCT(ancora)}. Última parcela: ${labelMesCT(final)}.`;
+  }
+
+  const salvar = () => {
+    const valorInformado = parseFloat(String(valor).replace(",","."));
+    if (!valorInformado || valorInformado <= 0) return;
+    if (!descricao.trim()) return;
+    if (!card) return;
+    const total = parceladoEfetivo ? Math.max(2, parseInt(parcelasTotal,10)||2) : 1;
+    const atual = parceladoEfetivo ? Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1)) : 1;
+    const valorParcela = atual <= 1 ? (valorInformado/total) : valorInformado;
+    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
+    onSave({
+      id: uid(), cartaoId: card.id, valorParcela, local: local.trim() || "—",
+      descricao: descricao.trim(), categoria, parcelas: total, parcelaAncora: atual,
+      competenciaAncora: ancora, data, quemComprou: quem,
+      formaPagamento: isDebito ? forma : "cartao",
+    });
+  };
+
+  return (
+    <Modal title="＋ Nova compra" onClose={onClose} w={460}>
+      <div style={{display:"grid",gap:14}}>
+        <Inp label={parceladoEfetivo && parcelaAtual>1 ? "Valor de cada parcela (R$)" : "Valor total (R$)"}
+          type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
+        <Inp label="Onde foi feita a compra" value={local} onChange={setLocal} placeholder="Ex.: Auto Peças União" />
+        <Inp label="O que foi comprado" value={descricao} onChange={setDescricao} placeholder="Ex.: Kit de embreagem" />
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Quem comprou</div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn sz="sm" v={quem==="Marcelo"?"pri":"ghost"} onClick={()=>setQuem("Marcelo")}>Marcelo</Btn>
+            <Btn sz="sm" v={quem==="Carol"?"pri":"ghost"} onClick={()=>setQuem("Carol")}>Carol</Btn>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Categoria</div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn sz="sm" v={categoria==="oficina"?"blue":"ghost"} onClick={()=>setCategoria("oficina")}>🔧 Oficina</Btn>
+            <Btn sz="sm" v={categoria==="particular"?"purple":"ghost"} onClick={()=>setCategoria("particular")}>🏠 Particular</Btn>
+          </div>
+        </div>
+        <Sel label="Cartão usado" value={cartaoId} onChange={setCartaoId}
+          options={cards.map(c=>({v:c.id,l:c.nome}))} />
+        {isDebito && (
+          <div>
+            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Forma de pagamento</div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn sz="sm" v={forma==="debito"?"pri":"ghost"} onClick={()=>setForma("debito")}>💳 Débito</Btn>
+              <Btn sz="sm" v={forma==="dinheiro"?"pri":"ghost"} onClick={()=>setForma("dinheiro")}>💵 Dinheiro</Btn>
+            </div>
+          </div>
+        )}
+        <Inp label="Data da compra" type="date" value={data} onChange={setData} />
+        {!isDebito && (
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.text,cursor:"pointer"}}>
+            <input type="checkbox" checked={parcelado} onChange={e=>setParcelado(e.target.checked)} />
+            Compra parcelada
+          </label>
+        )}
+        {parceladoEfetivo && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Inp label="Total de parcelas" type="number" value={parcelasTotal} onChange={setParcelasTotal} />
+            <Inp label="Esta é a parcela nº" type="number" value={parcelaAtual} onChange={setParcelaAtual} />
+          </div>
+        )}
+        {preview && <div style={{fontSize:12,color:T.muted}}>{preview}</div>}
+        <Btn full onClick={salvar}>Salvar compra</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function ModalEditarCartao({ card, onSave, onDelete, onClose }) {
+  const [nome, setNome] = useState(card ? card.nome : "");
+  const [tipo, setTipo] = useState(card ? card.tipo : "credito");
+  const [bandeira, setBandeira] = useState(card ? card.bandeira : "");
+  const [fechamento, setFechamento] = useState(card ? card.fechamento : 5);
+  const [vencimento, setVencimento] = useState(card ? card.vencimento : 12);
+  const [cor, setCor] = useState(card ? card.cor : CARTOES_CORES[0]);
+  const isDebito = tipo === "debito";
+
+  const salvar = () => {
+    if (!nome.trim()) return;
+    if (isDebito) {
+      onSave({ id: card ? card.id : uid(), nome: nome.trim(), tipo:"debito", bandeira:"—", fechamento:1, vencimento:1, cor });
+    } else {
+      const fe = Math.min(28, Math.max(1, parseInt(fechamento,10)||5));
+      const ve = Math.min(28, Math.max(1, parseInt(vencimento,10)||12));
+      onSave({ id: card ? card.id : uid(), nome: nome.trim(), tipo:"credito", bandeira: bandeira.trim()||"—", fechamento: fe, vencimento: ve, cor });
+    }
+  };
+
+  return (
+    <Modal title={card ? "Editar cartão" : "＋ Novo cartão"} onClose={onClose} w={440}>
+      <div style={{display:"grid",gap:14}}>
+        <Inp label={isDebito ? "Nome da conta" : "Nome do cartão"} value={nome} onChange={setNome} autoFocus />
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Tipo</div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn sz="sm" v={!isDebito?"pri":"ghost"} onClick={()=>setTipo("credito")}>💳 Cartão de crédito</Btn>
+            <Btn sz="sm" v={isDebito?"pri":"ghost"} onClick={()=>setTipo("debito")}>💵 Débito / dinheiro</Btn>
+          </div>
+        </div>
+        {!isDebito ? (
+          <>
+            <Inp label="Bandeira" value={bandeira} onChange={setBandeira} placeholder="Visa, Mastercard..." />
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Inp label="Dia do fechamento" type="number" value={fechamento} onChange={setFechamento} />
+              <Inp label="Dia do vencimento" type="number" value={vencimento} onChange={setVencimento} />
+            </div>
+          </>
+        ) : (
+          <div style={{fontSize:12,color:T.muted}}>Sem fechamento nem parcelamento — cada gasto cai direto no mês em que foi feito.</div>
+        )}
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Cor</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {CARTOES_CORES.map(c => (
+              <button key={c} onClick={()=>setCor(c)} style={{width:28,height:28,borderRadius:"50%",background:c,
+                border: cor===c ? "3px solid "+T.text : "2px solid transparent", cursor:"pointer"}} />
+            ))}
+          </div>
+        </div>
+        <Btn full onClick={salvar}>Salvar</Btn>
+        {card && (
+          <Btn full v="red" onClick={()=>{ if (confirm("Remover \""+card.nome+"\"? Os lançamentos dele também somem.")) onDelete(card.id); }}>
+            🗑️ Remover cartão
+          </Btn>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function AbaCartoes() {
+  const [cards, setCards] = useState(getCartoes);
+  const [compras, setComprasState] = useState(() => db.get(K.cartoesCompras));
+  const [pagamentos, setPagamentosState] = useState(getCartoesPagamentos);
+
+  const salvarCards = novo => { db.set(K.cartoes, novo); setCards(novo); };
+  const salvarCompras = novo => { db.set(K.cartoesCompras, novo); setComprasState(novo); };
+  const salvarPagamentos = novo => { setCartoesPagamentos(novo); setPagamentosState(novo); };
+
+  const cardById = id => cards.find(c => c.id === id) || null;
+  const cardDebito = () => cards.find(c => c.tipo === "debito") || null;
+  const cartoesCredito = cards.filter(c => c.tipo !== "debito");
+
+  const faturaEstaPaga = (cardId, comp) => !!pagamentos[chavePagamentoCT(cardId, comp)];
+  const marcarPagamento = (cardId, comp, paga) => {
+    const k = chavePagamentoCT(cardId, comp);
+    const novo = { ...pagamentos };
+    if (paga) novo[k] = true; else delete novo[k];
+    salvarPagamentos(novo);
+  };
+  const statusFaturaPagamento = (cardId, card, comp) => {
+    if (faturaEstaPaga(cardId, comp)) return "paga";
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    return hoje > dataVencimentoFaturaCT(comp, card) ? "vencida" : "pendente";
+  };
+  const computeFatura = cardId => { const card = cardById(cardId); return computeFaturaCompetenciaCT(compras, cardId, competenciaAtualCard(card)); };
+
+  // ---- modais ----
+  const [novaCompraFor, setNovaCompraFor] = useState(null); // cartaoId ou null (fechado)
+  const [editCard, setEditCard] = useState(undefined); // undefined=fechado, null=novo, card=editar
+  const [detailCardId, setDetailCardId] = useState(null);
+  const [detailViewComp, setDetailViewComp] = useState(null);
+  const [somarOpen, setSomarOpen] = useState(false);
+  const [somarSel, setSomarSel] = useState({});
+  const [debitoViewComp, setDebitoViewComp] = useState(null);
+
+  const abrirDetalhe = (cardId, comp) => {
+    const card = cardById(cardId);
+    setDetailCardId(cardId);
+    setDetailViewComp(comp || competenciaAtualCard(card));
+  };
+
+  const salvarNovaCompra = compra => {
+    salvarCompras([...compras, compra]);
+    setNovaCompraFor(null);
+    toast("Compra registrada!");
+  };
+  const excluirCompra = compraId => { salvarCompras(compras.filter(c => c.id !== compraId)); };
+
+  const salvarCard = card => {
+    const existe = cards.some(c => c.id === card.id);
+    salvarCards(existe ? cards.map(c => c.id===card.id ? card : c) : [...cards, card]);
+    setEditCard(undefined);
+    toast("Cartão salvo!");
+  };
+  const removerCard = cardId => {
+    salvarCards(cards.filter(c => c.id !== cardId));
+    salvarCompras(compras.filter(c => c.cartaoId !== cardId));
+    setEditCard(undefined);
+    toast("Cartão removido.");
+  };
+
+  // ---- painel Débito/Dinheiro ----
+  const cDebito = cardDebito();
+  const debitoComp = debitoViewComp || (cDebito ? competenciaAtualCard(cDebito) : null);
+  const debitoResumo = cDebito ? computeFaturaCompetenciaCT(compras, cDebito.id, debitoComp) : null;
+  let debitoMarcelo = 0, debitoCarol = 0;
+  if (debitoResumo) debitoResumo.itens.forEach(p => { if (p.quemComprou === "Carol") debitoCarol += p.valorParcela; else debitoMarcelo += p.valorParcela; });
+
+  // ---- somar fatura ----
+  const totalSomar = Object.keys(somarSel).filter(id => somarSel[id]).reduce((acc,id) => acc + computeFatura(id).total, 0);
+
+  const detailCard = detailCardId ? cardById(detailCardId) : null;
+  const detailIsDebito = detailCard && detailCard.tipo === "debito";
+  const detailFatura = detailCard ? computeFaturaCompetenciaCT(compras, detailCard.id, detailViewComp) : null;
+  const detailStatus = detailCard && !detailIsDebito ? statusFaturaPagamento(detailCard.id, detailCard, detailViewComp) : null;
+
+  return (
+    <div>
+      {cDebito && (
+        <Card style={{marginBottom:16,padding:14}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+            <span style={{fontWeight:800,color:T.text}}>💵 Débito/Dinheiro</span>
+            <Btn sz="sm" onClick={()=>setNovaCompraFor(cDebito.id)}>＋ compra</Btn>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8}}>
+            <button onClick={()=>setDebitoViewComp(addMesesCT(debitoComp,-1))}
+              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,width:30,height:30,color:T.muted,cursor:"pointer"}}>‹</button>
+            <button onClick={()=>abrirDetalhe(cDebito.id, debitoComp)} style={{flex:1,background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,fontFamily:"inherit",color:"inherit"}}>
+              <div style={{fontFamily:"inherit",fontWeight:800,fontSize:20,color:T.accent}}>{fmtBRL(debitoResumo.total)}</div>
+              <div style={{fontSize:11,color:T.muted}}>gastos de {labelMesCTCap(debitoComp)}</div>
+            </button>
+            <button onClick={()=>setDebitoViewComp(addMesesCT(debitoComp,1))}
+              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,width:30,height:30,color:T.muted,cursor:"pointer"}}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+            <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+              <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Marcelo</div>
+              <div style={{fontWeight:700,color:T.text}}>{fmtBRL(debitoMarcelo)}</div>
+            </div>
+            <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+              <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Carol</div>
+              <div style={{fontWeight:700,color:T.text}}>{fmtBRL(debitoCarol)}</div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{fontWeight:700,color:T.text,flex:1}}>Cartões</div>
+        <Btn v="ghost" sz="sm" onClick={()=>setSomarOpen(true)}>🧮 somar fatura</Btn>
+        <Btn sz="sm" onClick={()=>setEditCard(null)}>＋ novo cartão</Btn>
+      </div>
+
+      {cartoesCredito.length === 0 ? (
+        <div style={{textAlign:"center",color:T.muted,padding:60}}>
+          <div style={{fontSize:48,marginBottom:10}}>💳</div><p>Nenhum cartão ainda.</p>
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
+          {cartoesCredito.map(card => {
+            const f = computeFatura(card.id);
+            const compPagar = competenciaAPagarCT(card.fechamento);
+            const faturaPagar = computeFaturaCompetenciaCT(compras, card.id, compPagar);
+            const statusPagar = faturaPagar.total>0 ? statusFaturaPagamento(card.id, card, compPagar) : null;
+            return (
+              <Card key={card.id} onClick={()=>abrirDetalhe(card.id)} style={{padding:14,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                    <span style={{width:11,height:11,borderRadius:"50%",background:card.cor,flexShrink:0}} />
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.nome}</div>
+                      <div style={{fontSize:11,color:T.muted}}>{card.bandeira}</div>
+                    </div>
+                  </div>
+                  <span onClick={e=>{e.stopPropagation(); setEditCard(card);}} style={{color:T.muted,cursor:"pointer",padding:4}}>✎</span>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:T.muted}}>Fatura de {labelMesCTCap(f.competencia)}</div>
+                  <div style={{fontWeight:800,fontSize:18,color:T.text}}>{fmtBRL(f.total)}</div>
+                </div>
+                <div style={{fontSize:11,color:T.muted}}>Fecha dia {card.fechamento} · Vence dia {card.vencimento}</div>
+                <div style={{fontSize:11,color:T.muted}}>{f.itens.length} lançamento{f.itens.length===1?"":"s"}</div>
+                {faturaPagar.total<=0 ? (
+                  <Badge color={T.muted}>Sem lançamentos em {labelMesCTCap(compPagar)}</Badge>
+                ) : statusPagar==="paga" ? (
+                  <Badge color={T.green}>✅ {labelMesCTCap(compPagar)} paga</Badge>
+                ) : statusPagar==="vencida" ? (
+                  <Badge color={T.red}>⚠️ {labelMesCTCap(compPagar)} vencida</Badge>
+                ) : (
+                  <Badge color={T.orange}>{labelMesCTCap(compPagar)} a pagar · {fmtBRL(faturaPagar.total)}</Badge>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {novaCompraFor && (
+        <ModalNovaCompraCartao cards={cards} cartaoIdInicial={novaCompraFor}
+          onSave={salvarNovaCompra} onClose={()=>setNovaCompraFor(null)} />
+      )}
+
+      {editCard !== undefined && (
+        <ModalEditarCartao card={editCard} onSave={salvarCard} onDelete={removerCard} onClose={()=>setEditCard(undefined)} />
+      )}
+
+      {detailCard && (
+        <Modal title={detailCard.nome} onClose={()=>setDetailCardId(null)} w={520}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <button onClick={()=>setDetailViewComp(addMesesCT(detailViewComp,-1))}
+              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,width:30,height:30,color:T.muted,cursor:"pointer"}}>‹</button>
+            <div style={{flex:1,textAlign:"center",fontWeight:700,color:T.text}}>
+              {detailIsDebito ? "Gastos de " : "Fatura de "}{labelMesCTCap(detailViewComp)}
+            </div>
+            <button onClick={()=>setDetailViewComp(addMesesCT(detailViewComp,1))}
+              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,width:30,height:30,color:T.muted,cursor:"pointer"}}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+            <div style={{background:T.bg,borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:T.muted}}>Total</div>
+              <div style={{fontWeight:800,color:T.text}}>{fmtBRL(detailFatura.total)}</div>
+            </div>
+            <div style={{background:T.bg,borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:T.muted}}>🔧 Oficina</div>
+              <div style={{fontWeight:700,color:T.blue}}>{fmtBRL(detailFatura.oficina)}</div>
+            </div>
+            <div style={{background:T.bg,borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:T.muted}}>🏠 Particular</div>
+              <div style={{fontWeight:700,color:T.purple}}>{fmtBRL(detailFatura.particular)}</div>
+            </div>
+          </div>
+          {!detailIsDebito && (
+            <Btn full v={detailStatus==="paga"?"green":detailStatus==="vencida"?"red":"orange"}
+              onClick={()=>{ marcarPagamento(detailCard.id, detailViewComp, detailStatus!=="paga"); }} style={{marginBottom:14}}>
+              {detailStatus==="paga" ? "✅ Paga — toque para desmarcar" : detailStatus==="vencida" ? "⚠️ Vencida — toque para marcar como paga" : "Marcar como paga"}
+            </Btn>
+          )}
+          <Btn full v="ghost" onClick={()=>setNovaCompraFor(detailCard.id)} style={{marginBottom:14}}>＋ Nova compra</Btn>
+          {detailFatura.itens.length === 0 ? (
+            <div style={{textAlign:"center",color:T.muted,padding:20}}>Nenhum lançamento neste mês.</div>
+          ) : (
+            <div style={{display:"grid",gap:6}}>
+              {detailFatura.itens.map(p => (
+                <div key={p.compraId+"_"+p.parcelaIndex} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:p.categoria==="oficina"?T.blue:T.purple,flexShrink:0}} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.descricao}</div>
+                    <div style={{fontSize:11,color:T.muted}}>
+                      {detailIsDebito ? (p.formaPagamento==="dinheiro" ? "💵 Dinheiro · " : "💳 Débito · ") : ""}
+                      {p.local} · {p.quemComprou||""} · {fmtDate(p.data)}{p.totalParcelas>1 ? " · parcela "+p.parcelaIndex+"/"+p.totalParcelas : ""}
+                    </div>
+                  </div>
+                  <span style={{fontWeight:700,color:T.text}}>{fmtBRL(p.valorParcela)}</span>
+                  <button onClick={()=>excluirCompra(p.compraId)} style={{background:T.redLo,border:"none",borderRadius:5,color:T.red,cursor:"pointer",padding:"4px 8px",fontSize:11}}>excluir</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {somarOpen && (
+        <Modal title="🧮 Somar fatura" onClose={()=>setSomarOpen(false)} w={420}>
+          <div style={{display:"grid",gap:6,marginBottom:14}}>
+            {cards.map(card => {
+              const f = computeFatura(card.id);
+              return (
+                <label key={card.id} style={{display:"flex",alignItems:"center",gap:10,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                  <input type="checkbox" checked={!!somarSel[card.id]} onChange={e=>setSomarSel(s=>({...s,[card.id]:e.target.checked}))} />
+                  <span style={{width:9,height:9,borderRadius:"50%",background:card.cor}} />
+                  <span style={{flex:1,fontSize:13,color:T.text}}>{card.nome}</span>
+                  <span style={{fontWeight:700,color:T.text}}>{fmtBRL(f.total)}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div style={{background:T.accentLo,borderRadius:8,padding:"10px 14px",textAlign:"center"}}>
+            <div style={{fontSize:11,color:T.muted}}>Soma dos marcados</div>
+            <div style={{fontWeight:800,fontSize:20,color:T.accent}}>{fmtBRL(totalSomar)}</div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // ── ABA TAXAS ─────────────────────────────────────────────────────────────────
 
 function AbaTaxas() {
@@ -4813,7 +5296,7 @@ export default function App() {
     {id:"compras",icon:"🛒",label:"Compras"},
     {id:"agenda",icon:"📅",label:"Agenda"},
     {id:"precos_peliculas",icon:"🪟",label:isAdmin?"Preços Película":"Catálogo"},
-    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"}] : []),
+    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"},{id:"cartoes",icon:"💳",label:"Cartões"}] : []),
   ];
 
   const sair = async () => {
@@ -4860,6 +5343,7 @@ export default function App() {
         {aba==="simulador" && <AbaSimulador />}
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && <AbaAnalise />}
+        {aba==="cartoes" && isAdmin && <AbaCartoes />}
         {aba==="precos_peliculas" && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
       <Toast />
