@@ -3895,25 +3895,33 @@ const computeFaturaCompetenciaCT = (compras, cardId, alvo) => {
   return { total, oficina, particular, itens, competencia: alvo };
 };
 
-function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
-  const [valor, setValor] = useState("");
-  const [local, setLocal] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [quem, setQuem] = useState("Marcelo");
-  const [categoria, setCategoria] = useState("oficina");
-  const [cartaoId, setCartaoId] = useState(cartaoIdInicial || (cards[0] && cards[0].id) || "");
-  const [forma, setForma] = useState("debito");
-  const [data, setData] = useState(today());
+// compra: undefined/null = lançar nova compra; um objeto de compra existente
+// = editar essa compra (mantém o mesmo id, pra sempre dar pra corrigir/reverter
+// uma categoria ou valor errado depois). Em edição o parcelamento em si (nº de
+// parcelas, qual parcela é essa) não é alterável aqui — só os outros campos.
+function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelete, onClose }) {
+  const isEdicao = !!compra;
+  const [valor, setValor] = useState(isEdicao ? String(compra.valorParcela) : "");
+  const [local, setLocal] = useState(isEdicao ? compra.local : "");
+  const [descricao, setDescricao] = useState(isEdicao ? compra.descricao : "");
+  const [quem, setQuem] = useState(isEdicao ? compra.quemComprou : "Marcelo");
+  // Particular em primeiro lugar e como padrão: é fácil esquecer de trocar
+  // pra "Oficina" na hora do lançamento, então o padrão é o que erra menos.
+  const [categoria, setCategoria] = useState(isEdicao ? compra.categoria : "particular");
+  const [cartaoId, setCartaoId] = useState(isEdicao ? compra.cartaoId : (cartaoIdInicial || (cards[0] && cards[0].id) || ""));
+  const [forma, setForma] = useState(isEdicao ? (compra.formaPagamento==="dinheiro" ? "dinheiro" : "debito") : "debito");
+  const [data, setData] = useState(isEdicao ? compra.data : today());
   const [parcelado, setParcelado] = useState(false);
   const [parcelasTotal, setParcelasTotal] = useState(2);
   const [parcelaAtual, setParcelaAtual] = useState(1);
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
 
   const card = cards.find(c => c.id === cartaoId) || null;
   const isDebito = card && card.tipo === "debito";
   const parceladoEfetivo = parcelado && !isDebito;
 
   let preview = "";
-  if (parceladoEfetivo && card) {
+  if (!isEdicao && parceladoEfetivo && card) {
     const total = Math.max(2, parseInt(parcelasTotal,10)||2);
     const atual = Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1));
     const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
@@ -3926,6 +3934,19 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
     if (!valorInformado || valorInformado <= 0) return;
     if (!descricao.trim()) return;
     if (!card) return;
+
+    if (isEdicao) {
+      // Só reancora a competência se esta for a parcela-âncora (a 1ª) — as
+      // demais usam a âncora original, igual acontece na criação.
+      const ancora = compra.parcelaAncora <= 1 ? competenciaDaCompraCard(data, card) : compra.competenciaAncora;
+      onSave({
+        ...compra, cartaoId: card.id, valorParcela: valorInformado, local: local.trim() || "—",
+        descricao: descricao.trim(), categoria, data, quemComprou: quem,
+        formaPagamento: isDebito ? forma : "cartao", competenciaAncora: ancora,
+      });
+      return;
+    }
+
     const total = parceladoEfetivo ? Math.max(2, parseInt(parcelasTotal,10)||2) : 1;
     const atual = parceladoEfetivo ? Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1)) : 1;
     const valorParcela = atual <= 1 ? (valorInformado/total) : valorInformado;
@@ -3939,9 +3960,9 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
   };
 
   return (
-    <Modal title="＋ Nova compra" onClose={onClose} w={460} z={210}>
+    <Modal title={isEdicao ? "✏️ Editar compra" : "＋ Nova compra"} onClose={onClose} w={460} z={210}>
       <div style={{display:"grid",gap:14}}>
-        <Inp label={parceladoEfetivo && parcelaAtual>1 ? "Valor de cada parcela (R$)" : "Valor total (R$)"}
+        <Inp label={!isEdicao && parceladoEfetivo && parcelaAtual>1 ? "Valor de cada parcela (R$)" : isEdicao && compra.parcelas>1 ? "Valor desta parcela (R$)" : "Valor total (R$)"}
           type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
         <Inp label="Onde foi feita a compra" value={local} onChange={setLocal} placeholder="Ex.: Auto Peças União" />
         <Inp label="O que foi comprado" value={descricao} onChange={setDescricao} placeholder="Ex.: Kit de embreagem" />
@@ -3955,8 +3976,8 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
         <div>
           <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Categoria</div>
           <div style={{display:"flex",gap:8}}>
-            <Btn sz="sm" v={categoria==="oficina"?"blue":"ghost"} onClick={()=>setCategoria("oficina")}>🔧 Oficina</Btn>
             <Btn sz="sm" v={categoria==="particular"?"purple":"ghost"} onClick={()=>setCategoria("particular")}>🏠 Particular</Btn>
+            <Btn sz="sm" v={categoria==="oficina"?"blue":"ghost"} onClick={()=>setCategoria("oficina")}>🔧 Oficina</Btn>
           </div>
         </div>
         <Sel label="Cartão usado" value={cartaoId} onChange={setCartaoId}
@@ -3971,20 +3992,36 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, onSave, onClose }) {
           </div>
         )}
         <Inp label="Data da compra" type="date" value={data} onChange={setData} />
-        {!isDebito && (
+        {!isEdicao && !isDebito && (
           <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.text,cursor:"pointer"}}>
             <input type="checkbox" checked={parcelado} onChange={e=>setParcelado(e.target.checked)} />
             Compra parcelada
           </label>
         )}
-        {parceladoEfetivo && (
+        {!isEdicao && parceladoEfetivo && (
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <Inp label="Total de parcelas" type="number" value={parcelasTotal} onChange={setParcelasTotal} />
             <Inp label="Esta é a parcela nº" type="number" value={parcelaAtual} onChange={setParcelaAtual} />
           </div>
         )}
+        {isEdicao && compra.parcelas>1 && (
+          <div style={{fontSize:12,color:T.muted}}>
+            Parcela {compra.parcelaAncora}/{compra.parcelas} — o parcelamento em si não dá pra mudar aqui; exclua e lance de novo se precisar.
+          </div>
+        )}
         {preview && <div style={{fontSize:12,color:T.muted}}>{preview}</div>}
-        <Btn full onClick={salvar}>Salvar compra</Btn>
+        <Btn full onClick={salvar}>{isEdicao ? "Salvar alterações" : "Salvar compra"}</Btn>
+        {isEdicao && onDelete && (confirmandoExcluir ? (
+          <div style={{display:"grid",gap:8}}>
+            <div style={{fontSize:12,color:T.red,textAlign:"center"}}>Excluir esta compra? Não dá pra desfazer.</div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn full v="ghost" onClick={()=>setConfirmandoExcluir(false)}>Cancelar</Btn>
+              <Btn full v="red" onClick={()=>onDelete(compra.id)}>Confirmar exclusão</Btn>
+            </div>
+          </div>
+        ) : (
+          <Btn full v="ghost" onClick={()=>setConfirmandoExcluir(true)} style={{color:T.red,borderColor:T.red+"66"}}>🗑 Excluir compra</Btn>
+        ))}
       </div>
     </Modal>
   );
@@ -4098,6 +4135,7 @@ function AbaCartoes() {
 
   // ---- modais ----
   const [novaCompraFor, setNovaCompraFor] = useState(null); // cartaoId ou null (fechado)
+  const [editandoCompra, setEditandoCompra] = useState(null); // compra sendo editada, ou null (fechado)
   const [editCard, setEditCard] = useState(undefined); // undefined=fechado, null=novo, card=editar
   const [detailCardId, setDetailCardId] = useState(null);
   const [detailViewComp, setDetailViewComp] = useState(null);
@@ -4111,12 +4149,21 @@ function AbaCartoes() {
     setDetailViewComp(comp || competenciaAtualCard(card));
   };
 
-  const salvarNovaCompra = compra => {
-    salvarCompras([...compras, compra]);
+  // Serve tanto pra criar (compra.id novo, não existe ainda em compras) quanto
+  // pra editar (compra.id já existe — substitui no lugar, pra dar pra reverter
+  // uma categoria/valor lançado errado sem perder o histórico).
+  const salvarCompraForm = compra => {
+    const existe = compras.some(c => c.id === compra.id);
+    salvarCompras(existe ? compras.map(c => c.id===compra.id ? compra : c) : [...compras, compra]);
     setNovaCompraFor(null);
-    toast("Compra registrada!");
+    setEditandoCompra(null);
+    toast(existe ? "Compra atualizada!" : "Compra registrada!");
   };
-  const excluirCompra = compraId => { salvarCompras(compras.filter(c => c.id !== compraId)); };
+  const excluirCompra = compraId => {
+    salvarCompras(compras.filter(c => c.id !== compraId));
+    setEditandoCompra(null);
+    toast("Compra excluída.");
+  };
 
   const salvarCard = card => {
     const existe = cards.some(c => c.id === card.id);
@@ -4235,9 +4282,10 @@ function AbaCartoes() {
         </div>
       )}
 
-      {novaCompraFor && (
-        <ModalNovaCompraCartao cards={cards} cartaoIdInicial={novaCompraFor}
-          onSave={salvarNovaCompra} onClose={()=>setNovaCompraFor(null)} />
+      {(novaCompraFor || editandoCompra) && (
+        <ModalNovaCompraCartao cards={cards} cartaoIdInicial={novaCompraFor} compra={editandoCompra}
+          onSave={salvarCompraForm} onDelete={excluirCompra}
+          onClose={()=>{ setNovaCompraFor(null); setEditandoCompra(null); }} />
       )}
 
       {editCard !== undefined && (
@@ -4281,7 +4329,8 @@ function AbaCartoes() {
           ) : (
             <div style={{display:"grid",gap:6}}>
               {detailFatura.itens.map(p => (
-                <div key={p.compraId+"_"+p.parcelaIndex} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
+                <div key={p.compraId+"_"+p.parcelaIndex} onClick={()=>{ const c = compras.find(x=>x.id===p.compraId); if (c) setEditandoCompra(c); }}
+                  style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:p.categoria==="oficina"?T.blue:T.purple,flexShrink:0}} />
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.descricao}</div>
@@ -4291,7 +4340,7 @@ function AbaCartoes() {
                     </div>
                   </div>
                   <span style={{fontWeight:700,color:T.text}}>{fmtBRL(p.valorParcela)}</span>
-                  <button onClick={()=>excluirCompra(p.compraId)} style={{background:T.redLo,border:"none",borderRadius:5,color:T.red,cursor:"pointer",padding:"4px 8px",fontSize:11}}>excluir</button>
+                  <button onClick={e=>{ e.stopPropagation(); excluirCompra(p.compraId); }} style={{background:T.redLo,border:"none",borderRadius:5,color:T.red,cursor:"pointer",padding:"4px 8px",fontSize:11}}>excluir</button>
                 </div>
               ))}
             </div>
