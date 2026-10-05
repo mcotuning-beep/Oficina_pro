@@ -3891,6 +3891,11 @@ const computeFaturaCompetenciaCT = (compras, cardId, alvo) => {
       }
     });
   });
+  // Mais recente primeiro. Como "data" só tem o dia (sem hora), duas compras
+  // do mesmo dia empatam — nesse caso o sort (estável) mantém a ordem que já
+  // está no array; itens.reverse() antes garante que, empatando, a compra
+  // lançada por último apareça primeiro, não a mais antiga.
+  itens.reverse();
   itens.sort((a,b) => b.data.localeCompare(a.data));
   return { total, oficina, particular, itens, competencia: alvo };
 };
@@ -4142,11 +4147,15 @@ function AbaCartoes() {
   const [somarOpen, setSomarOpen] = useState(false);
   const [somarSel, setSomarSel] = useState({});
   const [debitoViewComp, setDebitoViewComp] = useState(null);
+  const [filtroDataDe, setFiltroDataDe] = useState("");
+  const [filtroDataAte, setFiltroDataAte] = useState("");
 
   const abrirDetalhe = (cardId, comp) => {
     const card = cardById(cardId);
     setDetailCardId(cardId);
     setDetailViewComp(comp || competenciaAtualCard(card));
+    setFiltroDataDe("");
+    setFiltroDataAte("");
   };
 
   // Serve tanto pra criar (compra.id novo, não existe ainda em compras) quanto
@@ -4192,6 +4201,11 @@ function AbaCartoes() {
   const detailIsDebito = detailCard && detailCard.tipo === "debito";
   const detailFatura = detailCard ? computeFaturaCompetenciaCT(compras, detailCard.id, detailViewComp) : null;
   const detailStatus = detailCard && !detailIsDebito ? statusFaturaPagamento(detailCard.id, detailCard, detailViewComp) : null;
+  // Filtro por período (datas no formato YYYY-MM-DD comparam certo como texto).
+  const detailItensFiltrados = detailFatura ? detailFatura.itens.filter(p =>
+    (!filtroDataDe || p.data >= filtroDataDe) && (!filtroDataAte || p.data <= filtroDataAte)
+  ) : [];
+  const filtroDataAtivo = !!(filtroDataDe || filtroDataAte);
 
   return (
     <div>
@@ -4324,11 +4338,21 @@ function AbaCartoes() {
             </Btn>
           )}
           <Btn full v="ghost" onClick={()=>setNovaCompraFor(detailCard.id)} style={{marginBottom:14}}>＋ Nova compra</Btn>
-          {detailFatura.itens.length === 0 ? (
-            <div style={{textAlign:"center",color:T.muted,padding:20}}>Nenhum lançamento neste mês.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"end",marginBottom:10}}>
+            <Inp label="De" type="date" value={filtroDataDe} onChange={setFiltroDataDe} />
+            <Inp label="Até" type="date" value={filtroDataAte} onChange={setFiltroDataAte} />
+            {filtroDataAtivo && (
+              <button onClick={()=>{setFiltroDataDe("");setFiltroDataAte("");}}
+                style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.muted,cursor:"pointer",padding:"8px 10px",fontFamily:"inherit",fontSize:12,height:34}}>limpar</button>
+            )}
+          </div>
+          {detailItensFiltrados.length === 0 ? (
+            <div style={{textAlign:"center",color:T.muted,padding:20}}>
+              {filtroDataAtivo ? "Nenhum lançamento nesse período." : "Nenhum lançamento neste mês."}
+            </div>
           ) : (
             <div style={{display:"grid",gap:6}}>
-              {detailFatura.itens.map(p => (
+              {detailItensFiltrados.map(p => (
                 <div key={p.compraId+"_"+p.parcelaIndex} onClick={()=>{ const c = compras.find(x=>x.id===p.compraId); if (c) setEditandoCompra(c); }}
                   style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:p.categoria==="oficina"?T.blue:T.purple,flexShrink:0}} />
