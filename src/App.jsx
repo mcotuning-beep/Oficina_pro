@@ -4216,6 +4216,26 @@ function AbaCartoes() {
   ) : [];
   const filtroDataAtivo = !!(filtroDataDe || filtroDataAte);
 
+  // ---- totais gerais (só cartões de crédito; débito/dinheiro tem painel próprio) ----
+  const totaisAbertos = { total:0, oficina:0, particular:0 };
+  const mesesAbertos = [];
+  cartoesCredito.forEach(card => {
+    const f = computeFatura(card.id);
+    totaisAbertos.total += f.total; totaisAbertos.oficina += f.oficina; totaisAbertos.particular += f.particular;
+    if (!mesesAbertos.some(c => sameCompCT(c, f.competencia))) mesesAbertos.push(f.competencia);
+  });
+  mesesAbertos.sort((a,b) => (a.ano-b.ano) || (a.mes-b.mes));
+  // Cada cartão fecha num dia diferente, então "em aberto agora" pode cair em
+  // 1 ou 2 meses ao mesmo tempo — a legenda deixa isso explícito.
+  const legendaAbertos = mesesAbertos.length === 1 ? "fatura de "+labelMesCT(mesesAbertos[0])
+    : "faturas de "+mesesAbertos.map(labelMesCT).join(" e ");
+  const compCalHoje = competenciaCalendarioCT(hojeObj);
+  const previsaoMeses = [1,2].map(n => {
+    const comp = addMesesCT(compCalHoje, n);
+    const total = cartoesCredito.reduce((s, card) => s + computeFaturaCompetenciaCT(compras, card.id, comp).total, 0);
+    return { comp, total };
+  });
+
   return (
     <div>
       <Card style={{marginBottom:16,padding:14,display:"grid",gap:14}}>
@@ -4253,6 +4273,37 @@ function AbaCartoes() {
             </div>
           </div>
         </Card>
+      )}
+
+      {cartoesCredito.length > 0 && (
+        <div style={{marginBottom:16,display:"grid",gap:10}}>
+          <Card style={{padding:14}}>
+            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>Total das faturas em aberto agora</div>
+            <div style={{fontWeight:800,fontSize:22,color:T.accent,marginTop:2}}>{fmtBRL(totaisAbertos.total)}</div>
+            <div style={{fontSize:11,color:T.muted}}>{legendaAbertos}</div>
+          </Card>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Card style={{padding:14}}>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>🔧 Oficina</div>
+              <div style={{fontWeight:800,fontSize:18,color:T.blue,marginTop:2}}>{fmtBRL(totaisAbertos.oficina)}</div>
+              <div style={{fontSize:11,color:T.muted}}>{legendaAbertos}</div>
+            </Card>
+            <Card style={{padding:14}}>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>🏠 Particular</div>
+              <div style={{fontWeight:800,fontSize:18,color:T.purple,marginTop:2}}>{fmtBRL(totaisAbertos.particular)}</div>
+              <div style={{fontSize:11,color:T.muted}}>{legendaAbertos}</div>
+            </Card>
+          </div>
+          <div style={{fontWeight:700,color:T.text,marginTop:4}}>Previsão dos próximos meses</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {previsaoMeses.map(p => (
+              <Card key={p.comp.ano+"-"+p.comp.mes} style={{padding:14}}>
+                <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>Fatura de {labelMesCTCap(p.comp)}</div>
+                <div style={{fontWeight:800,fontSize:18,color:T.text,marginTop:2}}>{fmtBRL(p.total)}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
       )}
 
       <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
