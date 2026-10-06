@@ -3787,21 +3787,29 @@ const MESES_ABREV_CT = ["jan","fev","mar","abr","mai","jun","jul","ago","set","o
 const normalizeMesCT = (ano, mes) => { const dt = new Date(ano, mes, 1); return { ano: dt.getFullYear(), mes: dt.getMonth() }; };
 const addMesesCT = (comp, n) => normalizeMesCT(comp.ano, comp.mes + n);
 const sameCompCT = (a, b) => a.ano === b.ano && a.mes === b.mes;
-const competenciaParaCT = (dataObj, fechamento) => {
+// "Competência" identifica a fatura pelo mês em que ela VENCE (é como o
+// usuário se refere a ela: "fatura de outubro"), não pelo mês em que fecha.
+// Quando o dia de vencimento é menor que o dia de fechamento, o vencimento
+// cai no mês seguinte ao fechamento (ex.: fecha dia 30, vence dia 5 → uma
+// compra feita antes do fechamento de setembro vence em outubro, então a
+// competência dela é outubro).
+const competenciaParaCT = (dataObj, card) => {
   let mes = dataObj.getMonth(), ano = dataObj.getFullYear();
-  if (dataObj.getDate() > fechamento) mes += 1;
+  if (dataObj.getDate() > card.fechamento) mes += 1;
+  if (card.vencimento < card.fechamento) mes += 1;
   return normalizeMesCT(ano, mes);
 };
-const competenciaAtualCT = fechamento => competenciaParaCT(new Date(), fechamento);
-const competenciaDaCompraCT = (dataIso, fechamento) => competenciaParaCT(new Date(dataIso+"T12:00:00"), fechamento);
+const competenciaAtualCT = card => competenciaParaCT(new Date(), card);
+const competenciaDaCompraCT = (dataIso, card) => competenciaParaCT(new Date(dataIso+"T12:00:00"), card);
 const competenciaCalendarioCT = dataObj => normalizeMesCT(dataObj.getFullYear(), dataObj.getMonth());
-const competenciaAtualCard = card => card.tipo === "debito" ? competenciaCalendarioCT(new Date()) : competenciaAtualCT(card.fechamento);
-const competenciaDaCompraCard = (dataIso, card) => card.tipo === "debito" ? competenciaCalendarioCT(new Date(dataIso+"T12:00:00")) : competenciaDaCompraCT(dataIso, card.fechamento);
+const competenciaAtualCard = card => card.tipo === "debito" ? competenciaCalendarioCT(new Date()) : competenciaAtualCT(card);
+const competenciaDaCompraCard = (dataIso, card) => card.tipo === "debito" ? competenciaCalendarioCT(new Date(dataIso+"T12:00:00")) : competenciaDaCompraCT(dataIso, card);
 const labelMesCT = comp => MESES_ABREV_CT[comp.mes];
 const labelMesCTCap = comp => { const m = labelMesCT(comp); return m.charAt(0).toUpperCase()+m.slice(1); };
 const chavePagamentoCT = (cardId, comp) => cardId+"|"+comp.ano+"-"+comp.mes;
-const dataVencimentoFaturaCT = (comp, card) => { let mesVenc = comp.mes; if (card.vencimento < card.fechamento) mesVenc += 1; return new Date(comp.ano, mesVenc, card.vencimento); };
-const competenciaAPagarCT = fechamento => addMesesCT(competenciaAtualCT(fechamento), -1);
+// comp.mes já é o mês de vencimento (ver competenciaParaCT acima).
+const dataVencimentoFaturaCT = (comp, card) => new Date(comp.ano, comp.mes, card.vencimento);
+const competenciaAPagarCT = card => addMesesCT(competenciaAtualCT(card), -1);
 
 // Quem já usava a aba antes da conta "Débito/Dinheiro" existir não tem essa
 // conta nos próprios dados — cria na hora de ler, 1x, se estiver faltando.
@@ -3914,7 +3922,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   // pra "Oficina" na hora do lançamento, então o padrão é o que erra menos.
   const [categoria, setCategoria] = useState(isEdicao ? compra.categoria : "particular");
   const [cartaoId, setCartaoId] = useState(isEdicao ? compra.cartaoId : (cartaoIdInicial || (cards[0] && cards[0].id) || ""));
-  const [forma, setForma] = useState(isEdicao ? (compra.formaPagamento==="dinheiro" ? "dinheiro" : "debito") : "debito");
+  const [forma, setForma] = useState(isEdicao ? (compra.formaPagamento==="dinheiro" ? "dinheiro" : compra.formaPagamento==="pix" ? "pix" : "debito") : "debito");
   const [data, setData] = useState(isEdicao ? compra.data : today());
   const [parcelado, setParcelado] = useState(false);
   const [parcelasTotal, setParcelasTotal] = useState(2);
@@ -3993,6 +4001,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
             <div style={{display:"flex",gap:8}}>
               <Btn sz="sm" v={forma==="debito"?"pri":"ghost"} onClick={()=>setForma("debito")}>💳 Débito</Btn>
               <Btn sz="sm" v={forma==="dinheiro"?"pri":"ghost"} onClick={()=>setForma("dinheiro")}>💵 Dinheiro</Btn>
+              <Btn sz="sm" v={forma==="pix"?"pri":"ghost"} onClick={()=>setForma("pix")}>📱 Pix</Btn>
             </div>
           </div>
         )}
@@ -4260,7 +4269,7 @@ function AbaCartoes() {
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
           {cartoesCredito.map(card => {
             const f = computeFatura(card.id);
-            const compPagar = competenciaAPagarCT(card.fechamento);
+            const compPagar = competenciaAPagarCT(card);
             const faturaPagar = computeFaturaCompetenciaCT(compras, card.id, compPagar);
             const statusPagar = faturaPagar.total>0 ? statusFaturaPagamento(card.id, card, compPagar) : null;
             return (
@@ -4359,7 +4368,7 @@ function AbaCartoes() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.descricao}</div>
                     <div style={{fontSize:11,color:T.muted}}>
-                      {detailIsDebito ? (p.formaPagamento==="dinheiro" ? "💵 Dinheiro · " : "💳 Débito · ") : ""}
+                      {detailIsDebito ? (p.formaPagamento==="dinheiro" ? "💵 Dinheiro · " : p.formaPagamento==="pix" ? "📱 Pix · " : "💳 Débito · ") : ""}
                       {p.local} · {p.quemComprou||""} · {fmtDate(p.data)}{p.totalParcelas>1 ? " · parcela "+p.parcelaIndex+"/"+p.totalParcelas : ""}
                     </div>
                   </div>
