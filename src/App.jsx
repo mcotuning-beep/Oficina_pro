@@ -4221,6 +4221,10 @@ function AbaCartoes() {
   // Mais recente primeiro; empate no mesmo dia = lançada por último aparece antes.
   ["particular","oficina"].forEach(cat => { detalheMes[cat].itens.reverse(); detalheMes[cat].itens.sort((a,b) => b.compra.data.localeCompare(a.compra.data)); });
   const [objetivoDetalheOpen, setObjetivoDetalheOpen] = useState(false);
+  // As listas detalhadas ficam escondidas atrás de um botão (página mais limpa);
+  // o resumo (totais, Marcelo/Carol, soma por conta) continua sempre visível.
+  const [listaAberta, setListaAberta] = useState({ particular: false, oficina: false, reserva: false });
+  const alternarLista = chave => setListaAberta(a => ({ ...a, [chave]: !a[chave] }));
 
   // Reserva do mês: soma dos aportes feitos neste mês (pela data do aporte).
   const reservaMes = { total: 0, Marcelo: 0, Carol: 0, itens: [] };
@@ -4509,6 +4513,13 @@ function AbaCartoes() {
                   {dm.itens.length === 0 ? (
                     <div style={{textAlign:"center",color:T.muted,fontSize:12,padding:8}}>Nenhum gasto {cat==="particular"?"particular":"da oficina"} neste mês.</div>
                   ) : (
+                    <button onClick={()=>alternarLista(cat)}
+                      style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.muted,cursor:"pointer",padding:"8px 12px",fontFamily:"inherit",fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span>{listaAberta[cat] ? "Esconder lançamentos" : "Ver lançamentos ("+dm.itens.length+")"}</span>
+                      <span>{listaAberta[cat] ? "▴" : "▾"}</span>
+                    </button>
+                  )}
+                  {dm.itens.length > 0 && listaAberta[cat] && (
                     <div style={{display:"grid",gap:6}}>
                       {dm.itens.map(({compra, valorTotal, quem}) => {
                         const cartao = cardById(compra.cartaoId);
@@ -4565,6 +4576,13 @@ function AbaCartoes() {
               {reservaMes.itens.length === 0 ? (
                 <div style={{textAlign:"center",color:T.muted,fontSize:12,padding:8}}>Nada guardado neste mês ainda.</div>
               ) : (
+                <button onClick={()=>alternarLista("reserva")}
+                  style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.muted,cursor:"pointer",padding:"8px 12px",fontFamily:"inherit",fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span>{listaAberta.reserva ? "Esconder aportes" : "Ver aportes ("+reservaMes.itens.length+")"}</span>
+                  <span>{listaAberta.reserva ? "▴" : "▾"}</span>
+                </button>
+              )}
+              {reservaMes.itens.length > 0 && listaAberta.reserva && (
                 <div style={{display:"grid",gap:6}}>
                   {reservaMes.itens.map(a => (
                     <div key={a.id} onClick={()=>setReservaForm(a)}
