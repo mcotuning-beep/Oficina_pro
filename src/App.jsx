@@ -3854,11 +3854,11 @@ function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta }) {
         <span style={{fontSize:12,color:T.muted,fontWeight:700}}>{emoji} {label}</span>
         {editando ? (
           <input autoFocus type="number" value={valorTmp} onChange={e=>setValorTmp(e.target.value)}
-            onBlur={confirmar} onKeyDown={e=>{ if (e.key==="Enter") confirmar(); }}
+            onClick={e=>e.stopPropagation()} onBlur={confirmar} onKeyDown={e=>{ if (e.key==="Enter") confirmar(); }}
             placeholder="objetivo R$"
             style={{width:100,background:T.bg,border:"1px solid "+T.border,borderRadius:6,padding:"4px 6px",color:T.text,fontFamily:"inherit",fontSize:12}} />
         ) : (
-          <button onClick={()=>{ setValorTmp(meta?String(meta):""); setEditando(true); }}
+          <button onClick={e=>{ e.stopPropagation(); setValorTmp(meta?String(meta):""); setEditando(true); }}
             style={{background:"none",border:"none",color:T.muted,fontSize:11,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",padding:0}}>
             {meta>0 ? `objetivo ${fmtBRL(meta)}` : "definir objetivo"}
           </button>
@@ -4122,12 +4122,23 @@ function AbaCartoes() {
   const hojeObj = new Date();
   const mesAtualStr = hojeObj.getFullYear()+"-"+String(hojeObj.getMonth()+1).padStart(2,"0");
   const gastosMes = { oficina: 0, particular: 0 };
+  // Detalhe por categoria e por quem comprou (Marcelo/Carol), pro card do objetivo.
+  const detalheMes = {
+    particular: { Marcelo: 0, Carol: 0, itens: [] },
+    oficina:    { Marcelo: 0, Carol: 0, itens: [] },
+  };
   compras.forEach(c => {
     if (!c.data || !c.data.startsWith(mesAtualStr)) return;
     const valorTotal = (c.valorParcela||0) * (c.parcelas||1);
-    if (c.categoria === "particular") gastosMes.particular += valorTotal;
-    else gastosMes.oficina += valorTotal;
+    const cat = c.categoria === "particular" ? "particular" : "oficina";
+    const quem = c.quemComprou === "Carol" ? "Carol" : "Marcelo";
+    gastosMes[cat] += valorTotal;
+    detalheMes[cat][quem] += valorTotal;
+    detalheMes[cat].itens.push({ compra: c, valorTotal, quem });
   });
+  // Mais recente primeiro; empate no mesmo dia = lançada por último aparece antes.
+  ["particular","oficina"].forEach(cat => { detalheMes[cat].itens.reverse(); detalheMes[cat].itens.sort((a,b) => b.compra.data.localeCompare(a.compra.data)); });
+  const [objetivoDetalheOpen, setObjetivoDetalheOpen] = useState(false);
 
   const cardById = id => cards.find(c => c.id === id) || null;
   const cardDebito = () => cards.find(c => c.tipo === "debito") || null;
@@ -4238,8 +4249,11 @@ function AbaCartoes() {
 
   return (
     <div>
-      <Card style={{marginBottom:16,padding:14,display:"grid",gap:14}}>
-        <div style={{fontWeight:800,color:T.text}}>🎯 Objetivo do mês — {labelMesCTCap(competenciaCalendarioCT(hojeObj))}</div>
+      <Card onClick={()=>setObjetivoDetalheOpen(true)} style={{marginBottom:16,padding:14,display:"grid",gap:14,cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <span style={{fontWeight:800,color:T.text}}>🎯 Objetivo do mês — {labelMesCTCap(competenciaCalendarioCT(hojeObj))}</span>
+          <span style={{fontSize:11,color:T.muted}}>ver detalhes ›</span>
+        </div>
         <LinhaObjetivoCartao emoji="🔧" label="Oficina" gasto={gastosMes.oficina} meta={metas.oficina||0}
           onChangeMeta={v => salvarMetas({...metas, oficina:v})} />
         <LinhaObjetivoCartao emoji="🏠" label="Particular" gasto={gastosMes.particular} meta={metas.particular||0}
@@ -4354,6 +4368,55 @@ function AbaCartoes() {
             );
           })}
         </div>
+      )}
+
+      {objetivoDetalheOpen && (
+        <Modal title={"Gastos de "+labelMesCTCap(competenciaCalendarioCT(hojeObj))} onClose={()=>setObjetivoDetalheOpen(false)} w={520}>
+          <div style={{display:"grid",gap:18}}>
+            {[["particular","🏠 Particular"],["oficina","🔧 Oficina"]].map(([cat,titulo]) => {
+              const dm = detalheMes[cat];
+              return (
+                <div key={cat} style={{display:"grid",gap:8}}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+                    <span style={{fontWeight:800,color:T.text}}>{titulo}</span>
+                    <span style={{fontWeight:800,color:cat==="particular"?T.purple:T.blue}}>{fmtBRL(gastosMes[cat])}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+                      <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Marcelo</div>
+                      <div style={{fontWeight:700,color:T.text}}>{fmtBRL(dm.Marcelo)}</div>
+                    </div>
+                    <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+                      <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Carol</div>
+                      <div style={{fontWeight:700,color:T.text}}>{fmtBRL(dm.Carol)}</div>
+                    </div>
+                  </div>
+                  {dm.itens.length === 0 ? (
+                    <div style={{textAlign:"center",color:T.muted,fontSize:12,padding:8}}>Nenhum gasto {cat==="particular"?"particular":"da oficina"} neste mês.</div>
+                  ) : (
+                    <div style={{display:"grid",gap:6}}>
+                      {dm.itens.map(({compra, valorTotal, quem}) => {
+                        const cartao = cardById(compra.cartaoId);
+                        return (
+                          <div key={compra.id} onClick={()=>setEditandoCompra(compra)}
+                            style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{compra.descricao}</div>
+                              <div style={{fontSize:11,color:T.muted}}>
+                                {quem} · {cartao ? cartao.nome : "—"} · {fmtDate(compra.data)}{compra.parcelas>1 ? " · "+compra.parcelas+"x" : ""}
+                              </div>
+                            </div>
+                            <span style={{fontWeight:700,color:T.text}}>{fmtBRL(valorTotal)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
       )}
 
       {(novaCompraFor || editandoCompra) && (
