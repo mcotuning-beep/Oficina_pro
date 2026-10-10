@@ -8,7 +8,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos", cartoesMetas:"op_cartoes_metas" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos", cartoesMetas:"op_cartoes_metas", cartoesReservas:"op_cartoes_reservas" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -100,6 +100,7 @@ const SYNC_TABLES = {
   op_cartoes_compras:   { table:"cartoes_compras",    kind:"array", toDb:r=>({id:r.id, dados:r}), fromDb:r=>r.dados },
   op_cartoes_pagamentos:{ table:"cartoes_pagamentos", kind:"id1" },
   op_cartoes_metas:     { table:"config", kind:"row", chave:"cartoes_metas" },
+  op_cartoes_reservas:  { table:"config", kind:"row", chave:"cartoes_reservas" },
 };
 
 // O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
@@ -262,7 +263,7 @@ async function pullAll() {
         setOutboxEntry(key, null, null);
       } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
     }
-    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag, cfgCartoesMetas] = await Promise.all([
+    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag, cfgCartoesMetas, cfgCartoesReservas] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
       supabase.from("produtos").select("*"),
@@ -278,6 +279,7 @@ async function pullAll() {
       supabase.from("cartoes_compras").select("*"),
       supabase.from("cartoes_pagamentos").select("*").eq("id",1).maybeSingle(),
       supabase.from("config").select("*").eq("chave","cartoes_metas").maybeSingle(),
+      supabase.from("config").select("*").eq("chave","cartoes_reservas").maybeSingle(),
     ]);
     // O cliente do Supabase NÃO lança exceção quando uma consulta falha (sessão
     // expirada, RLS, instabilidade de rede) — ele só devolve { data: null, error }.
@@ -289,7 +291,7 @@ async function pullAll() {
     [["clientes",cli],["veiculos",vei],["produtos",prd],["ordens",ord],["taxas",tax],["compras",cmp],
      ["agenda",agd],["config geral",cfgGeral],["config opcoes_pagamento",cfgOpcoes],
      ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas],
-     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag],["config cartoes_metas",cfgCartoesMetas]].forEach(([nome,r]) => {
+     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag],["config cartoes_metas",cfgCartoesMetas],["config cartoes_reservas",cfgCartoesReservas]].forEach(([nome,r]) => {
       if (r && r.error) { falhasLeitura.push(nome); registrarErroSync("pull:"+nome, r.error); }
     });
     if (falhasLeitura.length) avisarErroSync();
@@ -342,6 +344,7 @@ async function pullAll() {
     if (!salvaguardas.op_cartoes_compras) applyIfNotPending("op_cartoes_compras", JSON.stringify((ctCompras.data||[]).map(SYNC_TABLES.op_cartoes_compras.fromDb)));
     if (!(ctPag && ctPag.error)) applyIfNotPending("op_cartoes_pagamentos", JSON.stringify((ctPag.data && ctPag.data.dados) || {}));
     if (!(cfgCartoesMetas && cfgCartoesMetas.error)) applyIfNotPending("op_cartoes_metas", JSON.stringify((cfgCartoesMetas.data && cfgCartoesMetas.data.valor) || {}));
+    if (!(cfgCartoesReservas && cfgCartoesReservas.error)) applyIfNotPending("op_cartoes_reservas", JSON.stringify((cfgCartoesReservas.data && cfgCartoesReservas.data.valor) || {}));
   } finally {
     SYNC_PAUSED = false;
   }
@@ -3828,6 +3831,13 @@ const setCartoesPagamentos = obj => localStorage.setItem(K.cartoesPagamentos, JS
 const getCartoesMetas = () => { try { return JSON.parse(localStorage.getItem(K.cartoesMetas) || "{}"); } catch { return {}; } };
 const setCartoesMetas = obj => localStorage.setItem(K.cartoesMetas, JSON.stringify(obj));
 
+// Reserva (quanto guardar/investir no mês): lista de aportes
+// { id, data:"YYYY-MM-DD", valor, quem:"Marcelo"|"Carol", obs }. O alvo do mês
+// fica em metas.reserva (junto dos objetivos de gasto). Guardado como objeto
+// { aportes:[...] } porque a tabela config guarda um jsonb por chave.
+const getCartoesReservas = () => { try { const o = JSON.parse(localStorage.getItem(K.cartoesReservas) || "{}"); return Array.isArray(o.aportes) ? o.aportes : []; } catch { return []; } };
+const setCartoesReservas = arr => localStorage.setItem(K.cartoesReservas, JSON.stringify({ aportes: arr }));
+
 // Verde até 75% do objetivo, laranja de 75% a 100%, vermelho ao bater/passar.
 // Sem objetivo definido (meta<=0): cor neutra, sem barra de alerta.
 const corObjetivoCT = (gasto, meta) => {
@@ -3838,10 +3848,13 @@ const corObjetivoCT = (gasto, meta) => {
   return T.green;
 };
 
-function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta }) {
+function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta, tipo="gasto", onAdd }) {
   const [editando, setEditando] = useState(false);
   const [valorTmp, setValorTmp] = useState(meta ? String(meta) : "");
-  const cor = corObjetivoCT(gasto, meta);
+  // Gasto: verde → laranja → vermelho (quanto mais perto do limite, pior).
+  // Reserva é o contrário: encher é bom — azul enquanto junta, verde ao bater a meta.
+  const bateu = meta > 0 && gasto >= meta;
+  const cor = tipo === "reserva" ? (bateu ? T.green : T.accent) : corObjetivoCT(gasto, meta);
   const pct = meta > 0 ? Math.min(1, gasto / meta) : 0;
   const confirmar = () => {
     const v = parseFloat(String(valorTmp).replace(",", "."));
@@ -3867,11 +3880,61 @@ function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta }) {
       <div style={{height:8,borderRadius:4,background:T.bg,overflow:"hidden"}}>
         <div style={{height:"100%",width:(meta>0?pct*100:0)+"%",background:cor,borderRadius:4,transition:"width .2s"}} />
       </div>
-      <div style={{fontSize:14,fontWeight:800,color:cor}}>
-        {fmtBRL(gasto)}
-        {meta>0 && <span style={{fontSize:11,fontWeight:600,color:T.muted}}> / {fmtBRL(meta)}</span>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <div style={{fontSize:14,fontWeight:800,color:cor}}>
+          {fmtBRL(gasto)}
+          {meta>0 && <span style={{fontSize:11,fontWeight:600,color:T.muted}}> / {fmtBRL(meta)}</span>}
+          {tipo==="reserva" && bateu && <span style={{fontSize:11,fontWeight:700,color:T.green}}> ✅ meta batida</span>}
+        </div>
+        {onAdd && (
+          <button onClick={e=>{ e.stopPropagation(); onAdd(); }}
+            style={{background:T.accent,border:"none",borderRadius:8,color:"#000",cursor:"pointer",padding:"5px 10px",fontFamily:"inherit",fontSize:12,fontWeight:700}}>＋ guardar</button>
+        )}
       </div>
     </div>
+  );
+}
+
+// Lançar (ou editar) um aporte na reserva do mês.
+function ModalReservaCartao({ aporte, onSave, onDelete, onClose }) {
+  const isEdicao = !!aporte;
+  const [valor, setValor] = useState(isEdicao ? String(aporte.valor) : "");
+  const [quem, setQuem] = useState(isEdicao ? aporte.quem : "Marcelo");
+  const [data, setData] = useState(isEdicao ? aporte.data : today());
+  const [obs, setObs] = useState(isEdicao ? (aporte.obs||"") : "");
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  const salvar = () => {
+    const v = parseFloat(String(valor).replace(",","."));
+    if (!v || v <= 0 || !data) return;
+    onSave({ id: isEdicao ? aporte.id : uid(), data, valor: v, quem, obs: obs.trim() });
+  };
+  return (
+    <Modal title={isEdicao ? "✏️ Editar aporte" : "💰 Guardar na reserva"} onClose={onClose} w={440} z={210}>
+      <div style={{display:"grid",gap:14}}>
+        <Inp label="Valor guardado (R$)" type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Quem guardou</div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn sz="sm" v={quem==="Marcelo"?"pri":"ghost"} onClick={()=>setQuem("Marcelo")}>Marcelo</Btn>
+            <Btn sz="sm" v={quem==="Carol"?"pri":"ghost"} onClick={()=>setQuem("Carol")}>Carol</Btn>
+          </div>
+        </div>
+        <Inp label="Data" type="date" value={data} onChange={setData} />
+        <Inp label="Onde / para quê (opcional)" value={obs} onChange={setObs} placeholder="Ex.: CDB, poupança, reserva de emergência" />
+        <Btn full onClick={salvar}>{isEdicao ? "Salvar alterações" : "Guardar"}</Btn>
+        {isEdicao && onDelete && (confirmandoExcluir ? (
+          <div style={{display:"grid",gap:8}}>
+            <div style={{fontSize:12,color:T.red,textAlign:"center"}}>Excluir este aporte? Não dá pra desfazer.</div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn full v="ghost" onClick={()=>setConfirmandoExcluir(false)}>Cancelar</Btn>
+              <Btn full v="red" onClick={()=>onDelete(aporte.id)}>Confirmar exclusão</Btn>
+            </div>
+          </div>
+        ) : (
+          <Btn full v="ghost" onClick={()=>setConfirmandoExcluir(true)} style={{color:T.red,borderColor:T.red+"66"}}>🗑 Excluir aporte</Btn>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
@@ -4108,6 +4171,9 @@ function AbaCartoes() {
   const [compras, setComprasState] = useState(() => db.get(K.cartoesCompras));
   const [pagamentos, setPagamentosState] = useState(getCartoesPagamentos);
   const [metas, setMetasState] = useState(getCartoesMetas);
+  const [reservas, setReservasState] = useState(getCartoesReservas);
+  const [reservaForm, setReservaForm] = useState(undefined); // undefined=fechado, null=novo aporte, objeto=editar
+  const salvarReservas = novo => { setCartoesReservas(novo); setReservasState(novo); };
 
   const salvarCards = novo => { db.set(K.cartoes, novo); setCards(novo); };
   const salvarCompras = novo => { db.set(K.cartoesCompras, novo); setComprasState(novo); };
@@ -4139,6 +4205,25 @@ function AbaCartoes() {
   // Mais recente primeiro; empate no mesmo dia = lançada por último aparece antes.
   ["particular","oficina"].forEach(cat => { detalheMes[cat].itens.reverse(); detalheMes[cat].itens.sort((a,b) => b.compra.data.localeCompare(a.compra.data)); });
   const [objetivoDetalheOpen, setObjetivoDetalheOpen] = useState(false);
+
+  // Reserva do mês: soma dos aportes feitos neste mês (pela data do aporte).
+  const reservaMes = { total: 0, Marcelo: 0, Carol: 0, itens: [] };
+  reservas.forEach(a => {
+    if (!a.data || !a.data.startsWith(mesAtualStr)) return;
+    const quem = a.quem === "Carol" ? "Carol" : "Marcelo";
+    reservaMes.total += a.valor || 0;
+    reservaMes[quem] += a.valor || 0;
+    reservaMes.itens.push(a);
+  });
+  reservaMes.itens.reverse();
+  reservaMes.itens.sort((a,b) => b.data.localeCompare(a.data));
+  const salvarAporte = aporte => {
+    const existe = reservas.some(a => a.id === aporte.id);
+    salvarReservas(existe ? reservas.map(a => a.id===aporte.id ? aporte : a) : [...reservas, aporte]);
+    setReservaForm(undefined);
+    toast(existe ? "Aporte atualizado!" : "Guardado na reserva!");
+  };
+  const excluirAporte = id => { salvarReservas(reservas.filter(a => a.id !== id)); setReservaForm(undefined); toast("Aporte excluído."); };
 
   const cardById = id => cards.find(c => c.id === id) || null;
   const cardDebito = () => cards.find(c => c.tipo === "debito") || null;
@@ -4258,6 +4343,8 @@ function AbaCartoes() {
           onChangeMeta={v => salvarMetas({...metas, oficina:v})} />
         <LinhaObjetivoCartao emoji="🏠" label="Particular" gasto={gastosMes.particular} meta={metas.particular||0}
           onChangeMeta={v => salvarMetas({...metas, particular:v})} />
+        <LinhaObjetivoCartao tipo="reserva" emoji="💰" label="Reserva" gasto={reservaMes.total} meta={metas.reserva||0}
+          onChangeMeta={v => salvarMetas({...metas, reserva:v})} onAdd={()=>setReservaForm(null)} />
       </Card>
 
       {cDebito && (
@@ -4415,8 +4502,48 @@ function AbaCartoes() {
                 </div>
               );
             })}
+
+            <div style={{display:"grid",gap:8,borderTop:"1px solid "+T.border,paddingTop:14}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+                <span style={{fontWeight:800,color:T.text}}>💰 Reserva</span>
+                <span style={{fontWeight:800,color:T.accent}}>
+                  {fmtBRL(reservaMes.total)}{(metas.reserva||0)>0 && <span style={{fontSize:11,fontWeight:600,color:T.muted}}> / {fmtBRL(metas.reserva)}</span>}
+                </span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+                  <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Marcelo</div>
+                  <div style={{fontWeight:700,color:T.text}}>{fmtBRL(reservaMes.Marcelo)}</div>
+                </div>
+                <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+                  <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase"}}>Carol</div>
+                  <div style={{fontWeight:700,color:T.text}}>{fmtBRL(reservaMes.Carol)}</div>
+                </div>
+              </div>
+              {reservaMes.itens.length === 0 ? (
+                <div style={{textAlign:"center",color:T.muted,fontSize:12,padding:8}}>Nada guardado neste mês ainda.</div>
+              ) : (
+                <div style={{display:"grid",gap:6}}>
+                  {reservaMes.itens.map(a => (
+                    <div key={a.id} onClick={()=>setReservaForm(a)}
+                      style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.obs || "Aporte na reserva"}</div>
+                        <div style={{fontSize:11,color:T.muted}}>{a.quem} · {fmtDate(a.data)}</div>
+                      </div>
+                      <span style={{fontWeight:700,color:T.text}}>{fmtBRL(a.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Btn full v="ghost" onClick={()=>setReservaForm(null)}>＋ guardar na reserva</Btn>
+            </div>
           </div>
         </Modal>
+      )}
+
+      {reservaForm !== undefined && (
+        <ModalReservaCartao aporte={reservaForm} onSave={salvarAporte} onDelete={excluirAporte} onClose={()=>setReservaForm(undefined)} />
       )}
 
       {(novaCompraFor || editandoCompra) && (
