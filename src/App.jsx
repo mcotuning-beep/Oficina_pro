@@ -3832,7 +3832,7 @@ const getCartoesMetas = () => { try { return JSON.parse(localStorage.getItem(K.c
 const setCartoesMetas = obj => localStorage.setItem(K.cartoesMetas, JSON.stringify(obj));
 
 // Reserva (quanto guardar/investir no mês): lista de aportes
-// { id, data:"YYYY-MM-DD", valor, quem:"Marcelo"|"Carol", obs }. O alvo do mês
+// { id, data:"YYYY-MM-DD", valor, quem:"Marcelo"|"Carol", conta, obs }. O alvo do mês
 // fica em metas.reserva (junto dos objetivos de gasto). Guardado como objeto
 // { aportes:[...] } porque a tabela config guarda um jsonb por chave.
 const getCartoesReservas = () => { try { const o = JSON.parse(localStorage.getItem(K.cartoesReservas) || "{}"); return Array.isArray(o.aportes) ? o.aportes : []; } catch { return []; } };
@@ -3896,17 +3896,19 @@ function LinhaObjetivoCartao({ emoji, label, gasto, meta, onChangeMeta, tipo="ga
 }
 
 // Lançar (ou editar) um aporte na reserva do mês.
-function ModalReservaCartao({ aporte, onSave, onDelete, onClose }) {
+function ModalReservaCartao({ aporte, contas, onSave, onDelete, onClose }) {
   const isEdicao = !!aporte;
   const [valor, setValor] = useState(isEdicao ? String(aporte.valor) : "");
   const [quem, setQuem] = useState(isEdicao ? aporte.quem : "Marcelo");
   const [data, setData] = useState(isEdicao ? aporte.data : today());
+  const [conta, setConta] = useState(isEdicao ? (aporte.conta||"") : "");
   const [obs, setObs] = useState(isEdicao ? (aporte.obs||"") : "");
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  const contaAtual = (contas||[]).find(c => c.chave === conta.trim().toLowerCase());
   const salvar = () => {
     const v = parseFloat(String(valor).replace(",","."));
     if (!v || v <= 0 || !data) return;
-    onSave({ id: isEdicao ? aporte.id : uid(), data, valor: v, quem, obs: obs.trim() });
+    onSave({ id: isEdicao ? aporte.id : uid(), data, valor: v, quem, conta: conta.trim(), obs: obs.trim() });
   };
   return (
     <Modal title={isEdicao ? "✏️ Editar aporte" : "💰 Guardar na reserva"} onClose={onClose} w={440} z={210}>
@@ -3919,8 +3921,22 @@ function ModalReservaCartao({ aporte, onSave, onDelete, onClose }) {
             <Btn sz="sm" v={quem==="Carol"?"pri":"ghost"} onClick={()=>setQuem("Carol")}>Carol</Btn>
           </div>
         </div>
+        <div style={{display:"grid",gap:6}}>
+          <Inp label="Conta (onde foi guardado)" value={conta} onChange={setConta} placeholder="Ex.: Nubank, CDB Inter, Poupança Caixa" />
+          {(contas||[]).length > 0 && (
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {contas.filter(c => c.nome).map(c => (
+                <button key={c.chave} type="button" onClick={()=>setConta(c.nome)}
+                  style={{background:conta.trim().toLowerCase()===c.chave?T.accent:T.bg,color:conta.trim().toLowerCase()===c.chave?"#000":T.muted,border:"1px solid "+T.border,borderRadius:999,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{c.nome}</button>
+              ))}
+            </div>
+          )}
+          {contaAtual && (
+            <div style={{fontSize:11,color:T.muted}}>Essa conta tem {fmtBRL(contaAtual.total)} guardados até agora.</div>
+          )}
+        </div>
         <Inp label="Data" type="date" value={data} onChange={setData} />
-        <Inp label="Onde / para quê (opcional)" value={obs} onChange={setObs} placeholder="Ex.: CDB, poupança, reserva de emergência" />
+        <Inp label="Observação (opcional)" value={obs} onChange={setObs} placeholder="Ex.: reserva de emergência, viagem" />
         <Btn full onClick={salvar}>{isEdicao ? "Salvar alterações" : "Guardar"}</Btn>
         {isEdicao && onDelete && (confirmandoExcluir ? (
           <div style={{display:"grid",gap:8}}>
@@ -4217,6 +4233,18 @@ function AbaCartoes() {
   });
   reservaMes.itens.reverse();
   reservaMes.itens.sort((a,b) => b.data.localeCompare(a.data));
+  // Soma por conta: saldo acumulado (todos os aportes, de qualquer mês) e
+  // quanto entrou neste mês. Agrupa ignorando maiúsculas/minúsculas e espaços.
+  const contasMap = {};
+  reservas.forEach(a => {
+    const nome = (a.conta||"").trim();
+    const chave = nome.toLowerCase();
+    if (!contasMap[chave]) contasMap[chave] = { chave, nome, total: 0, mes: 0, qtd: 0 };
+    contasMap[chave].total += a.valor || 0;
+    contasMap[chave].qtd += 1;
+    if (a.data && a.data.startsWith(mesAtualStr)) contasMap[chave].mes += a.valor || 0;
+  });
+  const contasReserva = Object.values(contasMap).sort((a,b) => b.total - a.total);
   const salvarAporte = aporte => {
     const existe = reservas.some(a => a.id === aporte.id);
     salvarReservas(existe ? reservas.map(a => a.id===aporte.id ? aporte : a) : [...reservas, aporte]);
@@ -4520,6 +4548,20 @@ function AbaCartoes() {
                   <div style={{fontWeight:700,color:T.text}}>{fmtBRL(reservaMes.Carol)}</div>
                 </div>
               </div>
+              {contasReserva.length > 0 && (
+                <div style={{display:"grid",gap:6}}>
+                  <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>Por conta (saldo acumulado)</div>
+                  {contasReserva.map(c => (
+                    <div key={c.chave} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nome || "Sem conta"}</div>
+                        <div style={{fontSize:11,color:T.muted}}>{c.mes>0 ? "+ "+fmtBRL(c.mes)+" neste mês · " : ""}{c.qtd} aporte{c.qtd===1?"":"s"}</div>
+                      </div>
+                      <span style={{fontWeight:800,color:T.accent}}>{fmtBRL(c.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {reservaMes.itens.length === 0 ? (
                 <div style={{textAlign:"center",color:T.muted,fontSize:12,padding:8}}>Nada guardado neste mês ainda.</div>
               ) : (
@@ -4528,7 +4570,7 @@ function AbaCartoes() {
                     <div key={a.id} onClick={()=>setReservaForm(a)}
                       style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.obs || "Aporte na reserva"}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.conta || "Sem conta"}{a.obs ? " — "+a.obs : ""}</div>
                         <div style={{fontSize:11,color:T.muted}}>{a.quem} · {fmtDate(a.data)}</div>
                       </div>
                       <span style={{fontWeight:700,color:T.text}}>{fmtBRL(a.valor)}</span>
@@ -4543,7 +4585,7 @@ function AbaCartoes() {
       )}
 
       {reservaForm !== undefined && (
-        <ModalReservaCartao aporte={reservaForm} onSave={salvarAporte} onDelete={excluirAporte} onClose={()=>setReservaForm(undefined)} />
+        <ModalReservaCartao aporte={reservaForm} contas={contasReserva} onSave={salvarAporte} onDelete={excluirAporte} onClose={()=>setReservaForm(undefined)} />
       )}
 
       {(novaCompraFor || editandoCompra) && (
