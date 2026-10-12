@@ -4451,7 +4451,7 @@ function AbaAPagar({ somenteParticular = false }) {
     return {
       kind: "cartao", key: "cartao|" + card.id, card, nome: "Cartão " + card.nome, parcelaLabel: "",
       data: dv.getFullYear() + "-" + pad2AP(dv.getMonth() + 1) + "-" + pad2AP(dv.getDate()),
-      valor: valorFatura, pago: paga, chave: "",
+      valor: valorFatura, pago: paga, chave: "", partes: { particular: f.particular, oficina: f.oficina },
     };
   }).filter(Boolean);
 
@@ -4461,6 +4461,16 @@ function AbaAPagar({ somenteParticular = false }) {
   const total = itens.reduce((s, i) => s + i.valor, 0);
   const pago = itens.filter(i => i.pago).reduce((s, i) => s + i.valor, 0);
   const falta = total - pago;
+  // Soma por categoria (a fatura do cartão se divide entre Particular e Oficina).
+  const porCat = { particular: { total: 0, pago: 0 }, oficina: { total: 0, pago: 0 } };
+  itens.forEach(i => {
+    const partes = i.partes || { [i.categoria === "particular" ? "particular" : "oficina"]: i.valor };
+    ["particular", "oficina"].forEach(cat => {
+      const v = partes[cat] || 0;
+      porCat[cat].total += v;
+      if (i.pago) porCat[cat].pago += v;
+    });
+  });
   const vencidas = itens.filter(i => !i.pago && i.data < hoje);
 
   const alternarPago = item => {
@@ -4523,6 +4533,17 @@ function AbaAPagar({ somenteParticular = false }) {
           <div style={{fontSize:15,fontWeight:800,color:falta>0?T.red:T.green}}>{fmtBRL(falta)}</div>
         </Card>
       </div>
+      {!somenteParticular && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[["particular","🏠 Particular",T.purple],["oficina","🔧 Oficina",T.blue]].map(([cat, titulo, cor]) => (
+            <Card key={cat} style={{padding:10}}>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700}}>{titulo.toUpperCase()}</div>
+              <div style={{fontSize:16,fontWeight:800,color:cor}}>{fmtBRL(porCat[cat].total)}</div>
+              <div style={{fontSize:11,color:T.muted}}>falta pagar <b style={{color:porCat[cat].total-porCat[cat].pago>0.004?T.red:T.green}}>{fmtBRL(porCat[cat].total-porCat[cat].pago)}</b></div>
+            </Card>
+          ))}
+        </div>
+      )}
       {vencidas.length>0 && <div style={{fontSize:12,color:T.red,fontWeight:700}}>⚠️ {vencidas.length} {vencidas.length===1?"conta vencida":"contas vencidas"} sem pagamento</div>}
 
       <Btn full onClick={()=>setContaForm(null)}>＋ Nova conta</Btn>
