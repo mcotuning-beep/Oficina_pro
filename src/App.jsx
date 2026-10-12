@@ -3958,8 +3958,24 @@ function ModalReservaCartao({ aporte, contas, onSave, onDelete, onClose }) {
 }
 
 // Expande uma compra em uma entrada por parcela.
-const parcelasDeCT = compra => {
+const parcelasDeCT = (compra, alvo) => {
   const out = [];
+  // Assinatura: cobra todo mês, sem data pra acabar (até "ate", se tiver sido cancelada).
+  // Não dá pra listar "todas" as parcelas, então só devolve a do mês pedido (alvo).
+  if (compra.assinatura) {
+    if (!alvo) return out;
+    const k = (alvo.ano - compra.competenciaAncora.ano) * 12 + (alvo.mes - compra.competenciaAncora.mes);
+    const chaveAlvo = alvo.ano + "-" + String(alvo.mes + 1).padStart(2, "0");
+    if (k >= 0 && !(compra.ate && chaveAlvo > compra.ate)) {
+      out.push({
+        compraId: compra.id, cartaoId: compra.cartaoId, local: compra.local, descricao: compra.descricao,
+        categoria: compra.categoria, data: compra.data, quemComprou: compra.quemComprou, formaPagamento: compra.formaPagamento,
+        parcelaIndex: k + 1, totalParcelas: 1, assinatura: true, valorParcela: compra.valorParcela,
+        competencia: alvo,
+      });
+    }
+    return out;
+  }
   for (let i = compra.parcelaAncora; i <= compra.parcelas; i++) {
     out.push({
       compraId: compra.id, cartaoId: compra.cartaoId, local: compra.local, descricao: compra.descricao,
@@ -3973,7 +3989,7 @@ const parcelasDeCT = compra => {
 const computeFaturaCompetenciaCT = (compras, cardId, alvo) => {
   let total = 0, oficina = 0, particular = 0; const itens = [];
   compras.filter(c => c.cartaoId === cardId).forEach(c => {
-    parcelasDeCT(c).forEach(p => {
+    parcelasDeCT(c, alvo).forEach(p => {
       if (sameCompCT(p.competencia, alvo)) {
         total += p.valorParcela;
         if (p.categoria === "oficina") oficina += p.valorParcela; else particular += p.valorParcela;
@@ -4014,12 +4030,16 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   const [valorTipo, setValorTipo] = useState("total");
   // Fatura (mês de vencimento) em que cai a parcela quando ela não é a 1ª. Vazio = automático.
   const [faturaMes, setFaturaMes] = useState("");
+  // Assinatura: cobra todo mês, sem parcelas e sem data de fim (ate = última fatura, se cancelada).
+  const [assinatura, setAssinatura] = useState(isEdicao ? !!compra.assinatura : false);
+  const [ate, setAte] = useState(isEdicao && compra.ate ? compra.ate : "");
   useEffect(() => { setFaturaMes(""); }, [data, cartaoId]);
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
 
   const card = cards.find(c => c.id === cartaoId) || null;
   const isDebito = card && card.tipo === "debito";
-  const parceladoEfetivo = parcelado && !isDebito;
+  const assinaturaEfetiva = isEdicao ? !!compra.assinatura : (assinatura && !isDebito);
+  const parceladoEfetivo = parcelado && !isDebito && !assinatura;
 
   // Competência da parcela quando ela NÃO é a 1ª: se a data informada cai na fatura
   // atual ou na anterior (ainda aberta/a pagar), vale a data; senão (compra antiga,
@@ -4058,10 +4078,20 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
         ...compra, cartaoId: card.id, valorParcela: valorInformado, local: local.trim() || "—",
         descricao: descricao.trim(), categoria, data, quemComprou: quem,
         formaPagamento: isDebito ? forma : "cartao", competenciaAncora: ancora,
+        ...(compra.assinatura ? { ate: ate || undefined } : {}),
       });
       return;
     }
 
+    if (assinaturaEfetiva) {
+      onSave({
+        id: uid(), cartaoId: card.id, valorParcela: valorInformado, local: local.trim() || "—",
+        descricao: descricao.trim(), categoria, parcelas: 1, parcelaAncora: 1, assinatura: true,
+        competenciaAncora: competenciaDaCompraCard(data, card), data, quemComprou: quem,
+        formaPagamento: "cartao",
+      });
+      return;
+    }
     const total = parceladoEfetivo ? Math.max(2, parseInt(parcelasTotal,10)||2) : 1;
     const atual = parceladoEfetivo ? Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1)) : 1;
     const valorParcela = (parceladoEfetivo && valorTipo === "total") ? Math.round((valorInformado/total + 1e-9)*100)/100 : valorInformado;
@@ -4077,7 +4107,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   return (
     <Modal title={isEdicao ? "✏️ Editar compra" : "＋ Nova compra"} onClose={onClose} w={460} z={210}>
       <div style={{display:"grid",gap:14}}>
-        <Inp label={!isEdicao && parceladoEfetivo ? (valorTipo==="total" ? "Valor total da compra (R$)" : "Valor de cada parcela (R$)") : isEdicao && compra.parcelas>1 ? "Valor desta parcela (R$)" : "Valor total (R$)"}
+        <Inp label={assinaturaEfetiva ? "Valor mensal (R$)" : !isEdicao && parceladoEfetivo ? (valorTipo==="total" ? "Valor total da compra (R$)" : "Valor de cada parcela (R$)") : isEdicao && compra.parcelas>1 ? "Valor desta parcela (R$)" : "Valor total (R$)"}
           type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
         <Inp label="Onde foi feita a compra" value={local} onChange={setLocal} placeholder="Ex.: Auto Peças União" />
         <Inp label="O que foi comprado" value={descricao} onChange={setDescricao} placeholder="Ex.: Kit de embreagem" />
@@ -4110,9 +4140,24 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
         <Inp label="Data da compra" type="date" value={data} onChange={setData} />
         {!isEdicao && !isDebito && (
           <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.text,cursor:"pointer"}}>
-            <input type="checkbox" checked={parcelado} onChange={e=>setParcelado(e.target.checked)} />
+            <input type="checkbox" checked={parcelado && !assinatura} onChange={e=>{ setParcelado(e.target.checked); if (e.target.checked) setAssinatura(false); }} />
             Compra parcelada
           </label>
+        )}
+        {!isEdicao && !isDebito && (
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.text,cursor:"pointer"}}>
+            <input type="checkbox" checked={assinatura} onChange={e=>{ setAssinatura(e.target.checked); if (e.target.checked) setParcelado(false); }} />
+            🔁 Assinatura (cobra todo mês, sem data para acabar)
+          </label>
+        )}
+        {!isEdicao && assinaturaEfetiva && card && (
+          <div style={{fontSize:12,color:T.muted}}>A 1ª cobrança cai na fatura de {labelMesCT(competenciaDaCompraCard(data, card))} e se repete todo mês a partir daí, até você cancelar.</div>
+        )}
+        {isEdicao && compra.assinatura && (
+          <div style={{display:"grid",gap:8}}>
+            <div style={{fontSize:12,color:T.muted}}>🔁 Assinatura — cobra todo mês, a partir da fatura de {labelMesCT(compra.competenciaAncora)}. Mudar o valor aqui muda todos os meses.</div>
+            <Inp label="Cancelada? Última fatura cobrada (opcional)" type="month" value={ate} onChange={setAte} />
+          </div>
         )}
         {!isEdicao && parceladoEfetivo && (
           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -4127,7 +4172,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
             <Inp label="Esta é a parcela nº" type="number" value={parcelaAtual} onChange={setParcelaAtual} />
           </div>
         )}
-        {isEdicao && compra.parcelas>1 && (
+        {isEdicao && compra.parcelas>1 && !compra.assinatura && (
           <div style={{fontSize:12,color:T.muted}}>
             Parcela {compra.parcelaAncora}/{compra.parcelas} — o parcelamento em si não dá pra mudar aqui; exclua e lance de novo se precisar.
           </div>
@@ -4532,7 +4577,10 @@ function AbaCartoes() {
     oficina:    { Marcelo: 0, Carol: 0, itens: [] },
   };
   compras.forEach(c => {
-    if (!c.data || !c.data.startsWith(mesAtualStr)) return;
+    if (!c.data) return;
+    // Assinatura entra todo mês, desde o mês da 1ª cobrança até cancelar.
+    if (c.assinatura) { if (c.data.slice(0,7) > mesAtualStr || (c.ate && mesAtualStr > c.ate)) return; }
+    else if (!c.data.startsWith(mesAtualStr)) return;
     const valorTotal = (c.valorParcela||0) * (c.parcelas||1);
     const cat = c.categoria === "particular" ? "particular" : "oficina";
     const quem = c.quemComprou === "Carol" ? "Carol" : "Marcelo";
@@ -4851,7 +4899,7 @@ function AbaCartoes() {
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{compra.descricao}</div>
                               <div style={{fontSize:11,color:T.muted}}>
-                                {quem} · {cartao ? cartao.nome : "—"} · {fmtDate(compra.data)}{compra.parcelas>1 ? " · "+compra.parcelas+"x" : ""}
+                                {quem} · {cartao ? cartao.nome : "—"} · {fmtDate(compra.data)}{compra.assinatura ? " · 🔁 assinatura" : compra.parcelas>1 ? " · "+compra.parcelas+"x" : ""}
                               </div>
                             </div>
                             <span style={{fontWeight:700,color:T.text}}>{fmtBRL(valorTotal)}</span>
@@ -4985,14 +5033,14 @@ function AbaCartoes() {
           ) : (
             <div style={{display:"grid",gap:6}}>
               {detailItensFiltrados.map(p => (
-                <div key={p.compraId+"_"+p.parcelaIndex} onClick={()=>{ const c = compras.find(x=>x.id===p.compraId); if (c) setEditandoCompra(c); }}
+                <div key={p.compraId+"_"+p.parcelaIndex+"_"+(p.competencia ? p.competencia.ano+"-"+p.competencia.mes : "")} onClick={()=>{ const c = compras.find(x=>x.id===p.compraId); if (c) setEditandoCompra(c); }}
                   style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:p.categoria==="oficina"?T.blue:T.purple,flexShrink:0}} />
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.descricao}</div>
                     <div style={{fontSize:11,color:T.muted}}>
                       {detailIsDebito ? (p.formaPagamento==="dinheiro" ? "💵 Dinheiro · " : p.formaPagamento==="pix" ? "📱 Pix · " : "💳 Débito · ") : ""}
-                      {p.local} · {p.quemComprou||""} · {fmtDate(p.data)}{p.totalParcelas>1 ? " · parcela "+p.parcelaIndex+"/"+p.totalParcelas : ""}
+                      {p.local} · {p.quemComprou||""} · {fmtDate(p.data)}{p.assinatura ? " · 🔁 assinatura" : p.totalParcelas>1 ? " · parcela "+p.parcelaIndex+"/"+p.totalParcelas : ""}
                     </div>
                   </div>
                   <span style={{fontWeight:700,color:T.text}}>{fmtBRL(p.valorParcela)}</span>
