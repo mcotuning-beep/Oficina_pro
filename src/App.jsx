@@ -4317,7 +4317,7 @@ const ocorrenciasMesAP = (contas, ocorr, comp) => {
     const dia = Math.min(fd, diasNoMes);
     const o = ocorr[c.id + "|" + mk] || {};
     out.push({
-      kind: "conta", key: c.id + "|" + mk, conta: c, nome: c.nome, parcelaLabel,
+      kind: "conta", key: c.id + "|" + mk, conta: c, nome: c.nome, parcelaLabel, categoria: c.categoria || "oficina",
       data: comp.ano + "-" + pad2AP(comp.mes + 1) + "-" + pad2AP(dia),
       valor: o.valor != null && o.valor !== "" ? numAP(o.valor) : numAP(c.valor),
       valorEditado: o.valor != null && o.valor !== "",
@@ -4328,9 +4328,9 @@ const ocorrenciasMesAP = (contas, ocorr, comp) => {
   return out;
 };
 
-function ModalContaAP({ conta, onSave, onDelete, onClose }) {
+function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
   const novo = !conta;
-  const [f, setF] = useState(() => conta ? { ...conta } : { nome: "", tipo: "fixa", valor: "", vencimento: today(), parcelaInicial: 1, parcelas: 2, fim: "", chave: "", obs: "" });
+  const [f, setF] = useState(() => conta ? { ...conta, categoria: conta.categoria || "oficina" } : { nome: "", categoria: "particular", tipo: "fixa", valor: "", vencimento: today(), parcelaInicial: 1, parcelas: 2, fim: "", chave: "", obs: "" });
   const [confirmDel, setConfirmDel] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const salvar = () => {
@@ -4344,6 +4344,7 @@ function ModalContaAP({ conta, onSave, onDelete, onClose }) {
       ...f, id: f.id || uid(), nome: f.nome.trim(), valor: numAP(f.valor),
       parcelaInicial: Number(f.parcelaInicial) || 1, parcelas: Number(f.parcelas) || 1,
       fim: f.tipo === "fixa" ? (f.fim || "") : "",
+      categoria: somenteParticular ? "particular" : (f.categoria === "oficina" ? "oficina" : "particular"),
     });
   };
   const tipos = [["fixa", "🔁 Fixa"], ["parcelada", "🧮 Parcelada"], ["avulsa", "1️⃣ Avulsa"]];
@@ -4351,6 +4352,16 @@ function ModalContaAP({ conta, onSave, onDelete, onClose }) {
     <Modal title={novo ? "Nova conta a pagar" : "Editar conta (todos os meses)"} onClose={onClose} w={480} z={210}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <Inp label="Nome" value={f.nome} onChange={v=>set("nome",v)} placeholder="Ex.: Aluguel, Enel, Boleto Monte Carlo" autoFocus={novo} />
+        {!somenteParticular && (
+          <div>
+            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Categoria</div>
+            <div style={{display:"flex",gap:6}}>
+              <Btn sz="sm" v={f.categoria==="particular"?"purple":"ghost"} onClick={()=>set("categoria","particular")}>🏠 Particular</Btn>
+              <Btn sz="sm" v={f.categoria==="oficina"?"blue":"ghost"} onClick={()=>set("categoria","oficina")}>🔧 Oficina</Btn>
+            </div>
+            <div style={{fontSize:11,color:T.muted,marginTop:6}}>A Carol só enxerga as contas Particular.</div>
+          </div>
+        )}
         <div>
           <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Tipo</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -4418,7 +4429,7 @@ function ModalOcorrenciaAP({ item, onSave, onEditConta, onClose }) {
   );
 }
 
-function AbaAPagar() {
+function AbaAPagar({ somenteParticular = false }) {
   const [dados, setDados] = useState(getApagar);
   const [comp, setComp] = useState(() => normalizeMesCT(new Date().getFullYear(), new Date().getMonth()));
   const [contaForm, setContaForm] = useState(undefined); // undefined=fechado, null=nova, objeto=editar
@@ -4434,16 +4445,18 @@ function AbaAPagar() {
   const faturas = cards.filter(c => c.tipo !== "debito").map(card => {
     const f = computeFaturaCompetenciaCT(compras, card.id, comp);
     const paga = !!pagCartoes[chavePagamentoCT(card.id, comp)];
-    if (!(f.total > 0) && !paga) return null;
+    const valorFatura = somenteParticular ? f.particular : f.total;
+    if (!(valorFatura > 0)) return null;
     const dv = dataVencimentoFaturaCT(comp, card);
     return {
       kind: "cartao", key: "cartao|" + card.id, card, nome: "Cartão " + card.nome, parcelaLabel: "",
       data: dv.getFullYear() + "-" + pad2AP(dv.getMonth() + 1) + "-" + pad2AP(dv.getDate()),
-      valor: f.total, pago: paga, chave: "",
+      valor: valorFatura, pago: paga, chave: "",
     };
   }).filter(Boolean);
 
-  const itens = [...ocorrenciasMesAP(dados.contas, dados.ocorr, comp), ...faturas]
+  const contasVisiveis = somenteParticular ? dados.contas.filter(c => c.categoria === "particular") : dados.contas;
+  const itens = [...ocorrenciasMesAP(contasVisiveis, dados.ocorr, comp), ...faturas]
     .sort((a, b) => a.data.localeCompare(b.data) || a.nome.localeCompare(b.nome));
   const total = itens.reduce((s, i) => s + i.valor, 0);
   const pago = itens.filter(i => i.pago).reduce((s, i) => s + i.valor, 0);
@@ -4528,6 +4541,7 @@ function AbaAPagar() {
                 <span style={{fontWeight:800,fontSize:15,color:T.text}}>{fmtBRL(item.valor)}</span>
                 <span style={{fontSize:12,color:T.sub,fontWeight:700}}>{item.data.slice(8,10)}/{item.data.slice(5,7)}</span>
                 {item.pago ? <Badge color={T.green}>paga</Badge> : vencida ? <Badge color={T.red}>vencida</Badge> : null}
+                {!somenteParticular && item.kind==="conta" && <span style={{fontSize:11}} title={item.categoria==="particular"?"Particular":"Oficina"}>{item.categoria==="particular"?"🏠":"🔧"}</span>}
               </div>
               <div style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                 {item.nome}{item.parcelaLabel ? " " + item.parcelaLabel : ""}
@@ -4543,7 +4557,7 @@ function AbaAPagar() {
         );
       })}
 
-      {contaForm !== undefined && <ModalContaAP conta={contaForm} onSave={salvarConta} onDelete={apagarConta} onClose={()=>setContaForm(undefined)} />}
+      {contaForm !== undefined && <ModalContaAP conta={contaForm} somenteParticular={somenteParticular} onSave={salvarConta} onDelete={apagarConta} onClose={()=>setContaForm(undefined)} />}
       {ocorrAberta && <ModalOcorrenciaAP item={ocorrAberta} onSave={salvarOcorr} onEditConta={()=>{ const c = ocorrAberta.conta; setOcorrAberta(null); setContaForm(c); }} onClose={()=>setOcorrAberta(null)} />}
     </div>
   );
@@ -6131,7 +6145,7 @@ export default function App() {
 
   const isAdmin = usuario.nivel==="admin";
   const somenteCartoes = usuario.nivel==="cartoes";
-  const abas = somenteCartoes ? [{id:"cartoes",icon:"💳",label:"Cartões"}] : [
+  const abas = somenteCartoes ? [{id:"cartoes",icon:"💳",label:"Cartões"},{id:"apagar",icon:"🧾",label:"A Pagar"}] : [
     {id:"ordens",icon:"📋",label:"OS"},
     {id:"compras",icon:"🛒",label:"Compras"},
     {id:"agenda",icon:"📅",label:"Agenda"},
@@ -6184,7 +6198,7 @@ export default function App() {
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && !somenteCartoes && <AbaAnalise />}
         {aba==="cartoes" && (isAdmin || somenteCartoes) && <AbaCartoes />}
-        {aba==="apagar" && isAdmin && <AbaAPagar />}
+        {aba==="apagar" && (isAdmin || somenteCartoes) && <AbaAPagar somenteParticular={somenteCartoes} />}
         {aba==="precos_peliculas" && !somenteCartoes && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
       <Toast />
