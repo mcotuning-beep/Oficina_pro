@@ -4012,17 +4012,29 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   // O valor digitado é o TOTAL da compra (o app divide pelas parcelas) ou o valor
   // de CADA parcela (o que aparece na fatura). Padrão: total.
   const [valorTipo, setValorTipo] = useState("total");
+  // Fatura (mês de vencimento) em que cai a parcela quando ela não é a 1ª. Vazio = automático.
+  const [faturaMes, setFaturaMes] = useState("");
+  useEffect(() => { setFaturaMes(""); }, [data, cartaoId]);
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
 
   const card = cards.find(c => c.id === cartaoId) || null;
   const isDebito = card && card.tipo === "debito";
   const parceladoEfetivo = parcelado && !isDebito;
 
+  // Competência da parcela quando ela NÃO é a 1ª: se a data informada cai na fatura
+  // atual ou na anterior (ainda aberta/a pagar), vale a data; senão (compra antiga,
+  // ex.: feita em janeiro e hoje na parcela 10), vale a fatura atual. Dá pra ajustar o mês.
+  const ancoraParcelaIntermediaria = () => {
+    if (faturaMes && /^\d{4}-\d{2}$/.test(faturaMes)) return { ano: parseInt(faturaMes.slice(0,4),10), mes: parseInt(faturaMes.slice(5,7),10) - 1 };
+    const dc = competenciaDaCompraCard(data, card), at = competenciaAtualCard(card);
+    return ((at.ano - dc.ano) * 12 + (at.mes - dc.mes)) <= 1 ? dc : at;
+  };
+
   let preview = "";
   if (!isEdicao && parceladoEfetivo && card) {
     const total = Math.max(2, parseInt(parcelasTotal,10)||2);
     const atual = Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1));
-    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
+    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : ancoraParcelaIntermediaria();
     const final = addMesesCT(ancora, total - atual);
     preview = `Parcela ${atual}/${total} cai na fatura de ${labelMesCT(ancora)}. Última parcela: ${labelMesCT(final)}.`;
     const vi = parseFloat(String(valor).replace(",","."));
@@ -4053,7 +4065,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
     const total = parceladoEfetivo ? Math.max(2, parseInt(parcelasTotal,10)||2) : 1;
     const atual = parceladoEfetivo ? Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1)) : 1;
     const valorParcela = (parceladoEfetivo && valorTipo === "total") ? Math.round((valorInformado/total + 1e-9)*100)/100 : valorInformado;
-    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
+    const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : ancoraParcelaIntermediaria();
     onSave({
       id: uid(), cartaoId: card.id, valorParcela, local: local.trim() || "—",
       descricao: descricao.trim(), categoria, parcelas: total, parcelaAncora: atual,
@@ -4120,6 +4132,9 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
             Parcela {compra.parcelaAncora}/{compra.parcelas} — o parcelamento em si não dá pra mudar aqui; exclua e lance de novo se precisar.
           </div>
         )}
+        {!isEdicao && parceladoEfetivo && card && (parseInt(parcelaAtual,10)||1) > 1 && (() => { const a = ancoraParcelaIntermediaria(); return (
+          <Inp label="Fatura em que cai esta parcela (mês do vencimento)" type="month" value={a.ano+"-"+String(a.mes+1).padStart(2,"0")} onChange={setFaturaMes} />
+        ); })()}
         {preview && <div style={{fontSize:12,color:T.muted}}>{preview}</div>}
         <Btn full onClick={salvar}>{isEdicao ? "Salvar alterações" : "Salvar compra"}</Btn>
         {isEdicao && onDelete && (confirmandoExcluir ? (
