@@ -4009,6 +4009,9 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   const [parcelado, setParcelado] = useState(false);
   const [parcelasTotal, setParcelasTotal] = useState(2);
   const [parcelaAtual, setParcelaAtual] = useState(1);
+  // O valor digitado é o TOTAL da compra (o app divide pelas parcelas) ou o valor
+  // de CADA parcela (o que aparece na fatura). Padrão: total.
+  const [valorTipo, setValorTipo] = useState("total");
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
 
   const card = cards.find(c => c.id === cartaoId) || null;
@@ -4022,6 +4025,11 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
     const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
     const final = addMesesCT(ancora, total - atual);
     preview = `Parcela ${atual}/${total} cai na fatura de ${labelMesCT(ancora)}. Última parcela: ${labelMesCT(final)}.`;
+    const vi = parseFloat(String(valor).replace(",","."));
+    if (vi > 0) {
+      const vp = valorTipo === "total" ? Math.round((vi/total + 1e-9)*100)/100 : vi;
+      preview += ` Cada parcela: ${fmtBRL(vp)} (total ${fmtBRL(vp*total)}).`;
+    }
   }
 
   const salvar = () => {
@@ -4044,7 +4052,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
 
     const total = parceladoEfetivo ? Math.max(2, parseInt(parcelasTotal,10)||2) : 1;
     const atual = parceladoEfetivo ? Math.min(total, Math.max(1, parseInt(parcelaAtual,10)||1)) : 1;
-    const valorParcela = atual <= 1 ? (valorInformado/total) : valorInformado;
+    const valorParcela = (parceladoEfetivo && valorTipo === "total") ? Math.round((valorInformado/total + 1e-9)*100)/100 : valorInformado;
     const ancora = atual <= 1 ? competenciaDaCompraCard(data, card) : competenciaAtualCard(card);
     onSave({
       id: uid(), cartaoId: card.id, valorParcela, local: local.trim() || "—",
@@ -4057,7 +4065,7 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
   return (
     <Modal title={isEdicao ? "✏️ Editar compra" : "＋ Nova compra"} onClose={onClose} w={460} z={210}>
       <div style={{display:"grid",gap:14}}>
-        <Inp label={!isEdicao && parceladoEfetivo && parcelaAtual>1 ? "Valor de cada parcela (R$)" : isEdicao && compra.parcelas>1 ? "Valor desta parcela (R$)" : "Valor total (R$)"}
+        <Inp label={!isEdicao && parceladoEfetivo ? (valorTipo==="total" ? "Valor total da compra (R$)" : "Valor de cada parcela (R$)") : isEdicao && compra.parcelas>1 ? "Valor desta parcela (R$)" : "Valor total (R$)"}
           type="number" value={valor} onChange={setValor} placeholder="0,00" autoFocus />
         <Inp label="Onde foi feita a compra" value={local} onChange={setLocal} placeholder="Ex.: Auto Peças União" />
         <Inp label="O que foi comprado" value={descricao} onChange={setDescricao} placeholder="Ex.: Kit de embreagem" />
@@ -4093,6 +4101,13 @@ function ModalNovaCompraCartao({ cards, cartaoIdInicial, compra, onSave, onDelet
             <input type="checkbox" checked={parcelado} onChange={e=>setParcelado(e.target.checked)} />
             Compra parcelada
           </label>
+        )}
+        {!isEdicao && parceladoEfetivo && (
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:12,color:T.muted}}>O valor acima é:</span>
+            <Btn sz="sm" v={valorTipo==="total"?"pri":"ghost"} onClick={()=>setValorTipo("total")}>Total da compra</Btn>
+            <Btn sz="sm" v={valorTipo==="parcela"?"pri":"ghost"} onClick={()=>setValorTipo("parcela")}>Valor de cada parcela</Btn>
+          </div>
         )}
         {!isEdicao && parceladoEfetivo && (
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
