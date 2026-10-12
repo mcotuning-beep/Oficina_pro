@@ -4643,7 +4643,9 @@ function AbaCartoes() {
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     return hoje > dataVencimentoFaturaCT(comp, card) ? "vencida" : "pendente";
   };
-  const computeFatura = cardId => { const card = cardById(cardId); return computeFaturaCompetenciaCT(compras, cardId, competenciaAtualCard(card)); };
+  // A fatura mostrada nos cartões e nos totais é a do MÊS ATUAL (mês do vencimento),
+// aberta ou já paga — não a "próxima a fechar". Os meses seguintes ficam na previsão.
+const computeFatura = cardId => computeFaturaCompetenciaCT(compras, cardId, competenciaCalendarioCT(new Date()));
 
   // ---- modais ----
   const [novaCompraFor, setNovaCompraFor] = useState(null); // cartaoId ou null (fechado)
@@ -4660,7 +4662,7 @@ function AbaCartoes() {
   const abrirDetalhe = (cardId, comp) => {
     const card = cardById(cardId);
     setDetailCardId(cardId);
-    setDetailViewComp(comp || competenciaAtualCard(card));
+    setDetailViewComp(comp || competenciaCalendarioCT(new Date()));
     setFiltroDataDe("");
     setFiltroDataAte("");
   };
@@ -4781,7 +4783,7 @@ function AbaCartoes() {
       {cartoesCredito.length > 0 && (
         <div style={{marginBottom:16,display:"grid",gap:10}}>
           <Card style={{padding:14}}>
-            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>Total das faturas em aberto agora</div>
+            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6}}>Total das faturas do mês</div>
             <div style={{fontWeight:800,fontSize:22,color:T.accent,marginTop:2}}>{fmtBRL(totaisAbertos.total)}</div>
             <div style={{fontSize:11,color:T.muted}}>{legendaAbertos}</div>
           </Card>
@@ -4823,7 +4825,7 @@ function AbaCartoes() {
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
           {cartoesCredito.map(card => {
             const f = computeFatura(card.id);
-            const compPagar = competenciaAPagarCT(card);
+            const compPagar = f.competencia;
             const faturaPagar = computeFaturaCompetenciaCT(compras, card.id, compPagar);
             const statusPagar = faturaPagar.total>0 ? statusFaturaPagamento(card.id, card, compPagar) : null;
             return (
