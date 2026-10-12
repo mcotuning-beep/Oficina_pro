@@ -8,7 +8,7 @@ const T = {
   blue:"#3B82F6", blueLo:"#3B82F620", purple:"#A855F7", orange:"#F97316", orangeLo:"#F9731620",
 };
 
-const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos", cartoesMetas:"op_cartoes_metas", cartoesReservas:"op_cartoes_reservas" };
+const K = { clientes:"op_cli", veiculos:"op_vei", produtos:"op_prd", ordens:"op_ord", taxas:"op_taxas", config:"op_config", pagamento:"op_pagamento", compras:"op_compras", precosPeliculas:"op_precos_peliculas", cartoes:"op_cartoes", cartoesCompras:"op_cartoes_compras", cartoesPagamentos:"op_cartoes_pagamentos", cartoesMetas:"op_cartoes_metas", cartoesReservas:"op_cartoes_reservas", apagar:"op_apagar" };
 const db = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)||"[]"); } catch { return []; } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -101,6 +101,7 @@ const SYNC_TABLES = {
   op_cartoes_pagamentos:{ table:"cartoes_pagamentos", kind:"id1" },
   op_cartoes_metas:     { table:"config", kind:"row", chave:"cartoes_metas" },
   op_cartoes_reservas:  { table:"config", kind:"row", chave:"cartoes_reservas" },
+  op_apagar:            { table:"config", kind:"row", chave:"apagar" },
 };
 
 // O cliente do Supabase NÃO lança exceção quando uma gravação é recusada
@@ -263,7 +264,7 @@ async function pullAll() {
         setOutboxEntry(key, null, null);
       } catch (e) { console.error("[sync-flush-before-pull]", key, e); }
     }
-    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag, cfgCartoesMetas, cfgCartoesReservas] = await Promise.all([
+    const [cli, vei, prd, ord, tax, cmp, agd, cfgGeral, cfgOpcoes, pag, cfgPrecosPeliculas, ctCards, ctCompras, ctPag, cfgCartoesMetas, cfgCartoesReservas, cfgApagar] = await Promise.all([
       supabase.from("clientes").select("*"),
       supabase.from("veiculos").select("*"),
       supabase.from("produtos").select("*"),
@@ -280,6 +281,7 @@ async function pullAll() {
       supabase.from("cartoes_pagamentos").select("*").eq("id",1).maybeSingle(),
       supabase.from("config").select("*").eq("chave","cartoes_metas").maybeSingle(),
       supabase.from("config").select("*").eq("chave","cartoes_reservas").maybeSingle(),
+      supabase.from("config").select("*").eq("chave","apagar").maybeSingle(),
     ]);
     // O cliente do Supabase NÃO lança exceção quando uma consulta falha (sessão
     // expirada, RLS, instabilidade de rede) — ele só devolve { data: null, error }.
@@ -291,7 +293,7 @@ async function pullAll() {
     [["clientes",cli],["veiculos",vei],["produtos",prd],["ordens",ord],["taxas",tax],["compras",cmp],
      ["agenda",agd],["config geral",cfgGeral],["config opcoes_pagamento",cfgOpcoes],
      ["dados_pagamento",pag],["config precos_peliculas",cfgPrecosPeliculas],
-     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag],["config cartoes_metas",cfgCartoesMetas],["config cartoes_reservas",cfgCartoesReservas]].forEach(([nome,r]) => {
+     ["cartoes",ctCards],["cartoes_compras",ctCompras],["cartoes_pagamentos",ctPag],["config cartoes_metas",cfgCartoesMetas],["config cartoes_reservas",cfgCartoesReservas],["config apagar",cfgApagar]].forEach(([nome,r]) => {
       if (r && r.error) { falhasLeitura.push(nome); registrarErroSync("pull:"+nome, r.error); }
     });
     if (falhasLeitura.length) avisarErroSync();
@@ -345,6 +347,7 @@ async function pullAll() {
     if (!(ctPag && ctPag.error)) applyIfNotPending("op_cartoes_pagamentos", JSON.stringify((ctPag.data && ctPag.data.dados) || {}));
     if (!(cfgCartoesMetas && cfgCartoesMetas.error)) applyIfNotPending("op_cartoes_metas", JSON.stringify((cfgCartoesMetas.data && cfgCartoesMetas.data.valor) || {}));
     if (!(cfgCartoesReservas && cfgCartoesReservas.error)) applyIfNotPending("op_cartoes_reservas", JSON.stringify((cfgCartoesReservas.data && cfgCartoesReservas.data.valor) || {}));
+    if (!(cfgApagar && cfgApagar.error)) applyIfNotPending("op_apagar", JSON.stringify((cfgApagar.data && cfgApagar.data.valor) || {}));
   } finally {
     SYNC_PAUSED = false;
   }
@@ -4182,6 +4185,295 @@ function ModalEditarCartao({ card, onSave, onDelete, onClose }) {
   );
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// A PAGAR — contas fixas, parceladas e avulsas + faturas dos cartões
+// ═════════════════════════════════════════════════════════════════════════
+// Guardado como { contas:[...], ocorr:{...} } numa linha da tabela config.
+// conta: { id, nome, tipo:"fixa"|"parcelada"|"avulsa", valor, vencimento:"YYYY-MM-DD"
+//          (1º vencimento; o dia se repete todo mês), parcelaInicial, parcelas, fim:"YYYY-MM",
+//          chave (Pix ou linha do boleto padrão), obs }
+// ocorr["contaId|YYYY-MM"] = { pago, pagoEm, valor (só deste mês), chave (só deste mês) }
+const MESES_NOME_AP = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const getApagar = () => { try { const o = JSON.parse(localStorage.getItem(K.apagar) || "{}"); return { contas: Array.isArray(o.contas) ? o.contas : [], ocorr: (o.ocorr && typeof o.ocorr === "object") ? o.ocorr : {} }; } catch { return { contas: [], ocorr: {} }; } };
+const setApagar = obj => localStorage.setItem(K.apagar, JSON.stringify(obj));
+const pad2AP = n => String(n).padStart(2, "0");
+const chaveMesAP = comp => comp.ano + "-" + pad2AP(comp.mes + 1);
+const numAP = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isNaN(n) ? 0 : n; };
+
+// Linha digitável de boleto: copia só os números (o app do banco aceita melhor).
+// Pix (CPF, CNPJ, e-mail, telefone, chave aleatória) vai exatamente como digitado.
+const textoParaCopiarAP = t => {
+  const s = String(t || "").trim();
+  if (/^[\d\s.\-]+$/.test(s) && s.replace(/\D/g, "").length >= 44) return s.replace(/\D/g, "");
+  return s;
+};
+const copiarTextoAP = async t => {
+  const txt = textoParaCopiarAP(t);
+  if (!txt) return;
+  try { await navigator.clipboard.writeText(txt); toast("Copiado!"); return; } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    toast(ok ? "Copiado!" : "Não consegui copiar");
+  } catch { toast("Não consegui copiar"); }
+};
+
+// Ocorrências de contas (fixas/parceladas/avulsas) que caem no mês `comp`.
+const ocorrenciasMesAP = (contas, ocorr, comp) => {
+  const out = [];
+  const mk = chaveMesAP(comp);
+  const diasNoMes = new Date(comp.ano, comp.mes + 1, 0).getDate();
+  contas.forEach(c => {
+    if (!c.vencimento) return;
+    const [fy, fm, fd] = c.vencimento.split("-").map(Number);
+    const k = (comp.ano - fy) * 12 + (comp.mes - (fm - 1));
+    if (k < 0) return;
+    let parcelaLabel = "";
+    if (c.tipo === "avulsa") { if (k !== 0) return; }
+    else if (c.tipo === "parcelada") {
+      const p = (Number(c.parcelaInicial) || 1) + k;
+      const total = Number(c.parcelas) || 1;
+      if (p > total) return;
+      parcelaLabel = p + "/" + total;
+    } else if (c.fim && mk > c.fim) return;
+    const dia = Math.min(fd, diasNoMes);
+    const o = ocorr[c.id + "|" + mk] || {};
+    out.push({
+      kind: "conta", key: c.id + "|" + mk, conta: c, nome: c.nome, parcelaLabel,
+      data: comp.ano + "-" + pad2AP(comp.mes + 1) + "-" + pad2AP(dia),
+      valor: o.valor != null && o.valor !== "" ? numAP(o.valor) : numAP(c.valor),
+      valorEditado: o.valor != null && o.valor !== "",
+      chave: o.chave || c.chave || "",
+      pago: !!o.pago, pagoEm: o.pagoEm || "",
+    });
+  });
+  return out;
+};
+
+function ModalContaAP({ conta, onSave, onDelete, onClose }) {
+  const novo = !conta;
+  const [f, setF] = useState(() => conta ? { ...conta } : { nome: "", tipo: "fixa", valor: "", vencimento: today(), parcelaInicial: 1, parcelas: 2, fim: "", chave: "", obs: "" });
+  const [confirmDel, setConfirmDel] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const salvar = () => {
+    if (!f.nome.trim()) { toast("Informe o nome da conta"); return; }
+    if (!f.vencimento) { toast("Informe o vencimento"); return; }
+    if (f.tipo === "parcelada") {
+      const pi = Number(f.parcelaInicial) || 0, pt = Number(f.parcelas) || 0;
+      if (pi < 1 || pt < 1 || pi > pt) { toast("Confira o nº da parcela e o total"); return; }
+    }
+    onSave({
+      ...f, id: f.id || uid(), nome: f.nome.trim(), valor: numAP(f.valor),
+      parcelaInicial: Number(f.parcelaInicial) || 1, parcelas: Number(f.parcelas) || 1,
+      fim: f.tipo === "fixa" ? (f.fim || "") : "",
+    });
+  };
+  const tipos = [["fixa", "🔁 Fixa"], ["parcelada", "🧮 Parcelada"], ["avulsa", "1️⃣ Avulsa"]];
+  return (
+    <Modal title={novo ? "Nova conta a pagar" : "Editar conta (todos os meses)"} onClose={onClose} w={480} z={210}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <Inp label="Nome" value={f.nome} onChange={v=>set("nome",v)} placeholder="Ex.: Aluguel, Enel, Boleto Monte Carlo" autoFocus={novo} />
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Tipo</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {tipos.map(([v, l]) => <Btn key={v} sz="sm" v={f.tipo===v?"pri":"ghost"} onClick={()=>set("tipo",v)}>{l}</Btn>)}
+          </div>
+          <div style={{fontSize:11,color:T.muted,marginTop:6}}>
+            {f.tipo==="fixa" && "Aparece todo mês, a partir do 1º vencimento (serve também p/ conta variável: ajuste o valor em cada mês)."}
+            {f.tipo==="parcelada" && "Aparece só nos meses que faltam pagar, contando as parcelas (ex.: 3/5, 4/5, 5/5)."}
+            {f.tipo==="avulsa" && "Aparece só uma vez, no mês do vencimento."}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Inp label="Valor (R$)" type="number" value={f.valor} onChange={v=>set("valor",v)} placeholder="0,00" />
+          <Inp label={f.tipo==="fixa" ? "1º vencimento" : "Vencimento"} type="date" value={f.vencimento} onChange={v=>set("vencimento",v)} />
+        </div>
+        {f.tipo==="parcelada" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Inp label="Parcela deste vencimento" type="number" value={f.parcelaInicial} onChange={v=>set("parcelaInicial",v)} />
+            <Inp label="Total de parcelas" type="number" value={f.parcelas} onChange={v=>set("parcelas",v)} />
+          </div>
+        )}
+        {f.tipo==="fixa" && <Inp label="Termina em (opcional)" type="month" value={f.fim} onChange={v=>set("fim",v)} />}
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Chave Pix / linha do boleto (padrão)</label>
+          <textarea value={f.chave} onChange={e=>set("chave",e.target.value)} rows={3}
+            placeholder="Cole aqui a chave Pix de quem você paga ou a linha digitável"
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical"}} />
+          <div style={{fontSize:11,color:T.muted}}>Se o boleto muda todo mês, deixe vazio aqui e cole em cada mês ao abrir a conta.</div>
+        </div>
+        <Inp label="Observação (opcional)" value={f.obs} onChange={v=>set("obs",v)} />
+        <Btn full onClick={salvar}>Salvar</Btn>
+        {!novo && (confirmDel
+          ? <Btn full v="red" onClick={()=>onDelete(conta.id)}>Confirmar: apagar conta e todos os meses</Btn>
+          : <Btn full v="ghost" onClick={()=>setConfirmDel(true)}>🗑 Apagar conta</Btn>)}
+      </div>
+    </Modal>
+  );
+}
+
+function ModalOcorrenciaAP({ item, onSave, onEditConta, onClose }) {
+  const [valor, setValor] = useState(item.valorEditado ? String(item.valor) : "");
+  const [chave, setChave] = useState(item.chave || "");
+  const base = numAP(item.conta.valor);
+  const salvarCampos = (extra) => onSave(item, { valor: valor === "" ? undefined : numAP(valor), chave: chave.trim() === (item.conta.chave || "") ? undefined : chave.trim(), ...(extra || {}) });
+  return (
+    <Modal title={item.nome + (item.parcelaLabel ? " " + item.parcelaLabel : "")} onClose={onClose} w={480} z={210}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{fontSize:13,color:T.sub}}>Vence em <b style={{color:T.text}}>{fmtDate(item.data)}</b> · valor padrão {fmtBRL(base)}</div>
+        <Inp label="Valor deste mês (R$)" type="number" value={valor} onChange={setValor} placeholder={String(base)} />
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Pix / linha do boleto deste mês</label>
+          <textarea value={chave} onChange={e=>setChave(e.target.value)} rows={3}
+            placeholder="Cole aqui a chave Pix ou a linha digitável"
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical"}} />
+        </div>
+        {chave.trim() && <Btn full v="blue" onClick={()=>copiarTextoAP(chave)}>📋 Copiar {/^[\d\s.\-]+$/.test(chave.trim()) && chave.replace(/\D/g,"").length>=44 ? "linha do boleto" : "chave Pix"}</Btn>}
+        {item.conta.obs && <div style={{fontSize:12,color:T.muted}}>Obs.: {item.conta.obs}</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn style={{flex:1}} v={item.pago?"ghost":"green"} onClick={()=>salvarCampos({ pago: !item.pago })}>{item.pago ? "Desmarcar pago" : "✓ Marcar como paga"}</Btn>
+          <Btn style={{flex:1}} onClick={()=>salvarCampos()}>Salvar</Btn>
+        </div>
+        <Btn full v="ghost" onClick={onEditConta}>✏️ Editar conta (todos os meses)</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function AbaAPagar() {
+  const [dados, setDados] = useState(getApagar);
+  const [comp, setComp] = useState(() => normalizeMesCT(new Date().getFullYear(), new Date().getMonth()));
+  const [contaForm, setContaForm] = useState(undefined); // undefined=fechado, null=nova, objeto=editar
+  const [ocorrAberta, setOcorrAberta] = useState(null);
+  const [pagCartoes, setPagCartoes] = useState(getCartoesPagamentos);
+
+  const salvarDados = novo => { setApagar(novo); setDados(novo); };
+  const cards = getCartoes();
+  const compras = db.get(K.cartoesCompras);
+  const hoje = today();
+
+  // Faturas dos cartões de crédito que vencem no mês visto
+  const faturas = cards.filter(c => c.tipo !== "debito").map(card => {
+    const f = computeFaturaCompetenciaCT(compras, card.id, comp);
+    const paga = !!pagCartoes[chavePagamentoCT(card.id, comp)];
+    if (!(f.total > 0) && !paga) return null;
+    const dv = dataVencimentoFaturaCT(comp, card);
+    return {
+      kind: "cartao", key: "cartao|" + card.id, card, nome: "Cartão " + card.nome, parcelaLabel: "",
+      data: dv.getFullYear() + "-" + pad2AP(dv.getMonth() + 1) + "-" + pad2AP(dv.getDate()),
+      valor: f.total, pago: paga, chave: "",
+    };
+  }).filter(Boolean);
+
+  const itens = [...ocorrenciasMesAP(dados.contas, dados.ocorr, comp), ...faturas]
+    .sort((a, b) => a.data.localeCompare(b.data) || a.nome.localeCompare(b.nome));
+  const total = itens.reduce((s, i) => s + i.valor, 0);
+  const pago = itens.filter(i => i.pago).reduce((s, i) => s + i.valor, 0);
+  const falta = total - pago;
+  const vencidas = itens.filter(i => !i.pago && i.data < hoje);
+
+  const alternarPago = item => {
+    if (item.kind === "cartao") {
+      const k = chavePagamentoCT(item.card.id, comp);
+      const novo = { ...pagCartoes };
+      if (item.pago) delete novo[k]; else novo[k] = true;
+      setCartoesPagamentos(novo); setPagCartoes(novo);
+      return;
+    }
+    salvarOcorr(item, { pago: !item.pago });
+  };
+  const salvarOcorr = (item, campos) => {
+    const atual = { ...(dados.ocorr[item.key] || {}) };
+    Object.keys(campos).forEach(k => { if (campos[k] === undefined || campos[k] === "") delete atual[k]; else atual[k] = campos[k]; });
+    if (campos.pago === true) atual.pagoEm = hoje;
+    if (campos.pago === false) { delete atual.pago; delete atual.pagoEm; }
+    const ocorr = { ...dados.ocorr };
+    if (Object.keys(atual).length) ocorr[item.key] = atual; else delete ocorr[item.key];
+    salvarDados({ ...dados, ocorr });
+    setOcorrAberta(null);
+  };
+  const salvarConta = c => {
+    const existe = dados.contas.some(x => x.id === c.id);
+    salvarDados({ ...dados, contas: existe ? dados.contas.map(x => x.id === c.id ? c : x) : [...dados.contas, c] });
+    setContaForm(undefined);
+  };
+  const apagarConta = id => {
+    const ocorr = {};
+    Object.keys(dados.ocorr).forEach(k => { if (!k.startsWith(id + "|")) ocorr[k] = dados.ocorr[k]; });
+    salvarDados({ contas: dados.contas.filter(c => c.id !== id), ocorr });
+    setContaForm(undefined);
+  };
+
+  const mesAtual = normalizeMesCT(new Date().getFullYear(), new Date().getMonth());
+  const ehMesAtual = sameCompCT(comp, mesAtual);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <Btn sz="sm" v="ghost" onClick={()=>setComp(addMesesCT(comp,-1))}>‹</Btn>
+        <div style={{textAlign:"center",flex:1}}>
+          <div style={{fontWeight:800,fontSize:18,color:T.text}}>{MESES_NOME_AP[comp.mes].toUpperCase()} {comp.ano}</div>
+          {!ehMesAtual && <button onClick={()=>setComp(mesAtual)} style={{background:"none",border:"none",color:T.accent,fontSize:12,cursor:"pointer",fontWeight:700}}>ir para o mês atual</button>}
+        </div>
+        <Btn sz="sm" v="ghost" onClick={()=>setComp(addMesesCT(comp,1))}>›</Btn>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        <Card style={{textAlign:"center",padding:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>TOTAL</div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text}}>{fmtBRL(total)}</div>
+        </Card>
+        <Card style={{textAlign:"center",padding:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>PAGO</div>
+          <div style={{fontSize:15,fontWeight:800,color:T.green}}>{fmtBRL(pago)}</div>
+        </Card>
+        <Card style={{textAlign:"center",padding:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>FALTA PAGAR</div>
+          <div style={{fontSize:15,fontWeight:800,color:falta>0?T.red:T.green}}>{fmtBRL(falta)}</div>
+        </Card>
+      </div>
+      {vencidas.length>0 && <div style={{fontSize:12,color:T.red,fontWeight:700}}>⚠️ {vencidas.length} {vencidas.length===1?"conta vencida":"contas vencidas"} sem pagamento</div>}
+
+      <Btn full onClick={()=>setContaForm(null)}>＋ Nova conta</Btn>
+
+      {itens.length===0 && <Card style={{textAlign:"center",color:T.muted,fontSize:13,padding:20}}>Nenhuma conta neste mês. Toque em “＋ Nova conta” para cadastrar.</Card>}
+
+      {itens.map(item => {
+        const vencida = !item.pago && item.data < hoje;
+        const cor = item.pago ? T.green : vencida ? T.red : T.border;
+        const bg = item.pago ? T.green+"22" : vencida ? T.red+"1f" : T.card;
+        const abrir = () => { if (item.kind === "conta") setOcorrAberta(item); };
+        return (
+          <div key={item.key} style={{background:bg,border:"1px solid "+cor,borderLeft:"5px solid "+(item.pago?T.green:vencida?T.red:T.accent),borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
+            <div onClick={abrir} style={{flex:1,minWidth:0,cursor:item.kind==="conta"?"pointer":"default"}}>
+              <div style={{display:"flex",gap:8,alignItems:"baseline",flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,fontSize:15,color:T.text}}>{fmtBRL(item.valor)}</span>
+                <span style={{fontSize:12,color:T.sub,fontWeight:700}}>{item.data.slice(8,10)}/{item.data.slice(5,7)}</span>
+                {item.pago ? <Badge color={T.green}>paga</Badge> : vencida ? <Badge color={T.red}>vencida</Badge> : null}
+              </div>
+              <div style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {item.nome}{item.parcelaLabel ? " " + item.parcelaLabel : ""}
+                {item.kind==="cartao" && <span style={{color:T.muted,fontSize:11}}> · fatura (aba Cartões)</span>}
+              </div>
+              {item.chave && <div style={{fontSize:11,color:T.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.chave}</div>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+              <Btn sz="sm" v={item.pago?"green":"ghost"} onClick={()=>alternarPago(item)}>{item.pago?"✓ Paga":"Pagar"}</Btn>
+              {item.chave && <Btn sz="sm" v="blue" onClick={()=>copiarTextoAP(item.chave)}>📋 Copiar</Btn>}
+            </div>
+          </div>
+        );
+      })}
+
+      {contaForm !== undefined && <ModalContaAP conta={contaForm} onSave={salvarConta} onDelete={apagarConta} onClose={()=>setContaForm(undefined)} />}
+      {ocorrAberta && <ModalOcorrenciaAP item={ocorrAberta} onSave={salvarOcorr} onEditConta={()=>{ const c = ocorrAberta.conta; setOcorrAberta(null); setContaForm(c); }} onClose={()=>setOcorrAberta(null)} />}
+    </div>
+  );
+}
+
 function AbaCartoes() {
   const [cards, setCards] = useState(getCartoes);
   const [compras, setComprasState] = useState(() => db.get(K.cartoesCompras));
@@ -5764,7 +6056,7 @@ export default function App() {
     {id:"compras",icon:"🛒",label:"Compras"},
     {id:"agenda",icon:"📅",label:"Agenda"},
     {id:"precos_peliculas",icon:"🪟",label:isAdmin?"Preços Película":"Catálogo"},
-    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"},{id:"cartoes",icon:"💳",label:"Cartões"}] : []),
+    ...(isAdmin ? [{id:"produtos",icon:"📦",label:"Produtos"},{id:"simulador",icon:"🧮",label:"Simulador"},{id:"taxas",icon:"💳",label:"Taxas"},{id:"analise",icon:"📈",label:"Análise"},{id:"cartoes",icon:"💳",label:"Cartões"},{id:"apagar",icon:"🧾",label:"A Pagar"}] : []),
   ];
 
   const sair = async () => {
@@ -5812,6 +6104,7 @@ export default function App() {
         {aba==="taxas" && isAdmin && <AbaTaxas />}
         {aba==="analise" && !somenteCartoes && <AbaAnalise />}
         {aba==="cartoes" && (isAdmin || somenteCartoes) && <AbaCartoes />}
+        {aba==="apagar" && isAdmin && <AbaAPagar />}
         {aba==="precos_peliculas" && !somenteCartoes && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
       <Toast />
