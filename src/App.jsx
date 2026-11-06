@@ -477,6 +477,27 @@ const calcRecebimentosOS = os => {
   if (os?.status === "Concluída") return [{data:dataRelatorio(os), valor:Math.max(0, calcTotal(os)-Number(os?.desconto||0)), os}];
   return [];
 };
+// Peso (0 a 1) de uma OS concluída num mês, para custo/lucro/taxas. Normalmente a OS
+// inteira entra no mês da conclusão (peso 1). Mas se ela foi paga em MESES DIFERENTES
+// (ex.: R$ 200 no fim do mês passado e R$ 200 ao concluir), cada mês fica só com a
+// parte que foi recebida nele — senão o mês da conclusão somaria o valor todo.
+const pesoOSNoPeriodo = (os, m, a) => {
+  if (!os || os.status !== "Concluída") return 0;
+  const pg = os.pagamentos || [];
+  const total = pg.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  if (pg.length >= 2 && total > 0) {
+    const meses = new Set(pg.map(p => getDataPagamento(p, os).slice(0,7)));
+    if (meses.size >= 2) {
+      const ym = a + "-" + String(m+1).padStart(2,"0");
+      const noMes = pg.filter(p => getDataPagamento(p, os).slice(0,7) === ym).reduce((s,p)=>s+parseFloat(p.valor||0),0);
+      return noMes / total;
+    }
+  }
+  const dr = dataRelatorio(os);
+  if (!dr) return 0;
+  const d = new Date(dr + "T12:00:00");
+  return (d.getMonth() === m && d.getFullYear() === a) ? 1 : 0;
+};
 const calcResultadoOS = os => {
   const bruto = Number(os?.totalBruto ?? calcTotal(os));
   const desconto = Number(os?.desconto || 0);
@@ -3479,7 +3500,9 @@ function ResumoMetaMes({ ordens }) {
     const d = new Date(r.data + "T12:00:00");
     return d.getMonth() === mes && d.getFullYear() === ano;
   });
-  const lucroReal = comValor.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
+  const pesosMes = (ordens||[]).filter(o => o && calcTotal(o) > 0 && o.status === "Concluída")
+    .map(o => ({ o, w: pesoOSNoPeriodo(o, mes, ano) })).filter(x => x.w > 0);
+  const lucroReal = pesosMes.reduce((s,{o,w}) => s + w * calcResultadoOS(o).lucro, 0);
   const lucroAdiantamentos = movimentosLucroMes.filter(r => isOSAberta(r.os)).reduce((s,r)=>s+Number(r.lucro||0),0);
   const lucroMeta = lucroReal + lucroAdiantamentos;
   const inicioHoje = today();
@@ -4424,6 +4447,115 @@ function ModalOcorrenciaAP({ item, onSave, onEditConta, onClose }) {
           <Btn style={{flex:1}} onClick={()=>salvarCampos()}>Salvar</Btn>
         </div>
         <Btn full v="ghost" onClick={onEditConta}>✏️ Editar conta (todos os meses)</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AVISO DE CONTAS DO DIA — ao abrir o app (e enquanto ele estiver aberto):
+//   das 08:00 às 19:59  → contas que vencem HOJE (não pagas)
+//   a partir das 20:00  → contas de HOJE + de AMANHÃ (não pagas)
+// Depois que você toca em OK, só volta a aparecer na próxima janela (08:00 ou 20:00).
+// Contas em atraso (não pagas) aparecem numa seção à parte.
+// ─────────────────────────────────────────────────────────────────────────
+const itensAPagarDoMes = (comp, somenteParticular) => {
+  const dados = getApagar();
+  const contas = somenteParticular ? dados.contas.filter(c => c.categoria === "particular") : dados.contas;
+  const itens = ocorrenciasMesAP(contas, dados.ocorr, comp);
+  const compras = db.get(K.cartoesCompras);
+  const pag = getCartoesPagamentos();
+  getCartoes().filter(c => c.tipo !== "debito").forEach(card => {
+    const f = computeFaturaCompetenciaCT(compras, card.id, comp);
+    const valor = somenteParticular ? f.particular : f.total;
+    if (!(valor > 0)) return;
+    const dv = dataVencimentoFaturaCT(comp, card);
+    itens.push({
+      kind: "cartao", key: "cartao|" + card.id + "|" + comp.ano + "-" + comp.mes, nome: "Cartão " + card.nome, parcelaLabel: "",
+      data: dv.getFullYear() + "-" + pad2AP(dv.getMonth() + 1) + "-" + pad2AP(dv.getDate()),
+      valor, pago: !!pag[chavePagamentoCT(card.id, comp)], chave: "",
+    });
+  });
+  return itens;
+};
+const AVISO_APAGAR_KEY = "op_aviso_apagar_visto";
+const janelaAvisoAtual = () => {
+  const d = new Date();
+  const h = d.getHours();
+  const dia = today();
+  if (h >= 20) return { id: dia + "|noite", tipo: "noite", dia };
+  if (h >= 8) return { id: dia + "|manha", tipo: "manha", dia };
+  return null;
+};
+function AvisoContasDia({ somenteParticular, onIr }) {
+  const [, setTick] = useState(0);
+  const [visto, setVisto] = useState(() => { try { return localStorage.getItem(AVISO_APAGAR_KEY) || ""; } catch { return ""; } });
+  // Reavalia a cada 20s e quando o app volta pra frente (cobre a virada das 08:00/20:00
+  // e o carregamento dos dados logo depois do login).
+  useEffect(() => {
+    const t = setInterval(() => setTick(x => x + 1), 20000);
+    const vis = () => { if (!document.hidden) setTick(x => x + 1); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+  }, []);
+
+  const janela = janelaAvisoAtual();
+  if (!janela || visto === janela.id) return null;
+
+  const hoje = janela.dia;
+  const dAmanha = new Date(); dAmanha.setDate(dAmanha.getDate() + 1);
+  const amanha = dAmanha.getFullYear() + "-" + pad2AP(dAmanha.getMonth() + 1) + "-" + pad2AP(dAmanha.getDate());
+  const agora = new Date();
+  const compDe = d => ({ ano: d.getFullYear(), mes: d.getMonth() });
+  const naoPagas = arr => arr.filter(i => !i.pago);
+  const itensHojeMes = naoPagas(itensAPagarDoMes(compDe(agora), somenteParticular));
+  const itensAmanhaMes = compDe(dAmanha).mes === compDe(agora).mes ? itensHojeMes : naoPagas(itensAPagarDoMes(compDe(dAmanha), somenteParticular));
+  const mesAnterior = normalizeMesCT(agora.getFullYear(), agora.getMonth() - 1);
+  const itensMesAnt = naoPagas(itensAPagarDoMes(mesAnterior, somenteParticular));
+
+  const porData = (arr, dia) => arr.filter(i => i.data === dia).sort((a, b) => a.nome.localeCompare(b.nome));
+  const deHoje = porData(itensHojeMes, hoje);
+  const deAmanha = janela.tipo === "noite" ? porData(itensAmanhaMes, amanha) : [];
+  const atrasadas = [...itensMesAnt, ...itensHojeMes].filter(i => i.data < hoje).sort((a, b) => a.data.localeCompare(b.data));
+
+  if (!deHoje.length && !deAmanha.length && !atrasadas.length) return null;
+
+  const fechar = () => { try { localStorage.setItem(AVISO_APAGAR_KEY, janela.id); } catch {} setVisto(janela.id); };
+  const ir = () => { fechar(); onIr && onIr(); };
+  const soma = arr => arr.reduce((s, i) => s + i.valor, 0);
+
+  const Secao = ({ titulo, arr, cor }) => arr.length === 0 ? null : (
+    <div style={{display:"grid",gap:6}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+        <span style={{fontWeight:800,color:cor}}>{titulo}</span>
+        <span style={{fontWeight:800,color:T.text}}>{fmtBRL(soma(arr))}</span>
+      </div>
+      {arr.map(i => (
+        <div key={i.key} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:8,padding:"8px 10px",borderLeft:"4px solid "+cor}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.nome}{i.parcelaLabel ? " " + i.parcelaLabel : ""}</div>
+            <div style={{fontSize:11,color:T.muted}}>vence {i.data.slice(8,10)}/{i.data.slice(5,7)}</div>
+          </div>
+          <span style={{fontWeight:800,color:T.text}}>{fmtBRL(i.valor)}</span>
+          {i.chave && <Btn sz="sm" v="blue" onClick={()=>copiarTextoAP(i.chave)}>📋</Btn>}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <Modal title={janela.tipo === "noite" ? "🔔 Contas de hoje e de amanhã" : "🔔 Contas de hoje"} onClose={fechar} w={460} z={300}>
+      <div style={{display:"grid",gap:14}}>
+        {deHoje.length === 0 && <div style={{fontSize:13,color:T.sub}}>Nenhuma conta vence hoje.</div>}
+        <Secao titulo={"Vencem hoje (" + fmtDate(hoje).slice(0,5) + ")"} arr={deHoje} cor={T.accent} />
+        {janela.tipo === "noite" && (deAmanha.length === 0
+          ? <div style={{fontSize:13,color:T.sub}}>Nenhuma conta vence amanhã.</div>
+          : <Secao titulo={"Vencem amanhã (" + fmtDate(amanha).slice(0,5) + ")"} arr={deAmanha} cor={T.blue} />)}
+        <Secao titulo="⚠️ Em atraso" arr={atrasadas} cor={T.red} />
+        <div style={{display:"flex",gap:8}}>
+          <Btn full v="ghost" onClick={ir}>Abrir A Pagar</Btn>
+          <Btn full onClick={fechar}>OK</Btn>
+        </div>
       </div>
     </Modal>
   );
@@ -5789,13 +5921,18 @@ function AbaAnalise(){
     });
     const totalRecebido = recebimentosMes.reduce((s,r)=>s+Number(r.valor||0),0);
     const totalFat = totalRecebido;
-    const totalTaxas = comValor.reduce((s,o) => s + Number(o.totalTaxas||0), 0);
-    const totalDescontos = comValor.reduce((s,o) => s + Number(o.desconto||0), 0);
-    const totalCustoPecas = comValor.reduce((s,o) => s + calcResultadoOS(o).custoPecas, 0);
-    const totalOutrosCustos = comValor.reduce((s,o) => s + calcResultadoOS(o).outrosCustos, 0);
-    const liquidoFinal = comValor.reduce((s,o) => s + calcResultadoOS(o).liquido, 0);
-    const lucroReal = comValor.reduce((s,o) => s + calcResultadoOS(o).lucro, 0);
-    const lucroMedio = comValor.length > 0 ? lucroReal / comValor.length : 0;
+    // Peso de cada OS no período (OS paga em meses diferentes divide custo/lucro
+    // conforme o que foi recebido em cada mês — ver pesoOSNoPeriodo).
+    const pesosPeriodo = todas.filter(o => o && calcTotal(o) > 0 && o.status === "Concluída")
+      .map(o => ({ o, w: pesoOSNoPeriodo(o, periodo.m, periodo.a) })).filter(x => x.w > 0);
+    const somaPesos = pesosPeriodo.reduce((s,x) => s + x.w, 0);
+    const totalTaxas = pesosPeriodo.reduce((s,{o,w}) => s + w * Number(o.totalTaxas||0), 0);
+    const totalDescontos = pesosPeriodo.reduce((s,{o,w}) => s + w * Number(o.desconto||0), 0);
+    const totalCustoPecas = pesosPeriodo.reduce((s,{o,w}) => s + w * calcResultadoOS(o).custoPecas, 0);
+    const totalOutrosCustos = pesosPeriodo.reduce((s,{o,w}) => s + w * calcResultadoOS(o).outrosCustos, 0);
+    const liquidoFinal = pesosPeriodo.reduce((s,{o,w}) => s + w * calcResultadoOS(o).liquido, 0);
+    const lucroReal = pesosPeriodo.reduce((s,{o,w}) => s + w * calcResultadoOS(o).lucro, 0);
+    const lucroMedio = somaPesos > 0 ? lucroReal / somaPesos : 0;
     const metaNum = Number(metaDiaria||0);
     const inicioHoje = today();
     const recebidoHoje = recebimentosMes.filter(r => r.data === inicioHoje).reduce((s,r)=>s+Number(r.valor||0),0);
@@ -6222,6 +6359,7 @@ export default function App() {
         {aba==="apagar" && (isAdmin || somenteCartoes) && <AbaAPagar somenteParticular={somenteCartoes} />}
         {aba==="precos_peliculas" && !somenteCartoes && <AbaPrecosPeliculas isAdmin={isAdmin} />}
       </div>
+      {(isAdmin || somenteCartoes) && <AvisoContasDia somenteParticular={somenteCartoes} onIr={()=>setAba("apagar")} />}
       <Toast />
     </div></>
   );
