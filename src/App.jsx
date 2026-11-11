@@ -4292,7 +4292,9 @@ function ModalEditarCartao({ card, onSave, onDelete, onClose }) {
 //          chave (Pix ou linha do boleto padrão), obs }
 // ocorr["contaId|YYYY-MM"] = { pago, pagoEm, valor (só deste mês), chave (só deste mês) }
 const MESES_NOME_AP = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-const getApagar = () => { try { const o = JSON.parse(localStorage.getItem(K.apagar) || "{}"); return { contas: Array.isArray(o.contas) ? o.contas : [], ocorr: (o.ocorr && typeof o.ocorr === "object") ? o.ocorr : {} }; } catch { return { contas: [], ocorr: {} }; } };
+// forn: fornecedores com compras em aberto — [{ id, nome, chave, itens:[{ id, data, desc, valor }] }]. Pagou → o fornecedor é apagado.
+const getApagar = () => { try { const o = JSON.parse(localStorage.getItem(K.apagar) || "{}"); return { contas: Array.isArray(o.contas) ? o.contas : [], ocorr: (o.ocorr && typeof o.ocorr === "object") ? o.ocorr : {}, forn: Array.isArray(o.forn) ? o.forn : [] }; } catch { return { contas: [], ocorr: {}, forn: [] }; } };
+const totalFornAP = fo => (fo.itens || []).reduce((s, i) => s + numAP(i.valor), 0);
 const setApagar = obj => localStorage.setItem(K.apagar, JSON.stringify(obj));
 const pad2AP = n => String(n).padStart(2, "0");
 const chaveMesAP = comp => comp.ano + "-" + pad2AP(comp.mes + 1);
@@ -4546,7 +4548,7 @@ function ModalLerContaAP({ onResult, onClose }) {
   );
 }
 
-function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
+function ModalContaAP({ conta, somenteParticular, fornecedores = [], onSave, onSaveForn, onDelete, onClose }) {
   const novo = !conta;
   const [f, setF] = useState(() => conta ? { ...conta, categoria: conta.categoria || "oficina" } : { nome: "", categoria: "particular", tipo: "fixa", valor: "", vencimento: today(), parcelaInicial: 1, parcelas: 2, fim: "", chave: "", obs: "" });
   const [confirmDel, setConfirmDel] = useState(false);
@@ -4564,7 +4566,14 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
     setLendo(false);
     toast("Conta lida! " + (r.aviso || "Confira os dados e salve."));
   };
+  const ehForn = f.tipo === "fornecedor";
   const salvar = () => {
+    if (ehForn) {
+      if (!f.nome.trim()) { toast("Informe o nome do fornecedor"); return; }
+      if (!(numAP(f.valor) > 0)) { toast("Informe o valor da compra"); return; }
+      onSaveForn({ nome: f.nome.trim(), valor: numAP(f.valor), data: f.vencimento || today(), desc: (f.obs || "").trim() });
+      return;
+    }
     if (!f.nome.trim()) { toast("Informe o nome da conta"); return; }
     if (!f.vencimento) { toast("Informe o vencimento"); return; }
     if (f.tipo === "parcelada") {
@@ -4578,13 +4587,19 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
       categoria: somenteParticular ? "particular" : (f.categoria === "oficina" ? "oficina" : "particular"),
     });
   };
-  const tipos = [["fixa", "🔁 Fixa"], ["parcelada", "🧮 Parcelada"], ["avulsa", "1️⃣ Avulsa"]];
+  const tipos = [["fixa", "🔁 Fixa"], ["parcelada", "🧮 Parcelada"], ["avulsa", "1️⃣ Avulsa"], ...(novo && !somenteParticular ? [["fornecedor", "🧾 Fornecedor"]] : [])];
   return (
     <Modal title={novo ? "Nova conta a pagar" : "Editar conta (todos os meses)"} onClose={onClose} w={480} z={210}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        {novo && <Btn full v="blue" onClick={()=>setLendo(true)}>📷 Ler boleto / QR Pix pela câmera</Btn>}
-        <Inp label="Nome" value={f.nome} onChange={v=>set("nome",v)} placeholder="Ex.: Aluguel, Enel, Boleto Monte Carlo" autoFocus={novo} />
-        {!somenteParticular && (
+        {novo && !ehForn && <Btn full v="blue" onClick={()=>setLendo(true)}>📷 Ler boleto / QR Pix pela câmera</Btn>}
+        <Inp label={ehForn ? "Fornecedor" : "Nome"} value={f.nome} onChange={v=>set("nome",v)} placeholder={ehForn ? "Ex.: Auto Peças Silva" : "Ex.: Aluguel, Enel, Boleto Monte Carlo"} autoFocus={novo} />
+        {ehForn && fornecedores.length > 0 && (
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:11,color:T.muted}}>Em aberto:</span>
+            {fornecedores.map(fo => <Btn key={fo.id} sz="sm" v={f.nome.trim().toLowerCase()===fo.nome.trim().toLowerCase()?"pri":"ghost"} onClick={()=>set("nome",fo.nome)}>{fo.nome}</Btn>)}
+          </div>
+        )}
+        {!somenteParticular && !ehForn && (
           <div>
             <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Categoria</div>
             <div style={{display:"flex",gap:6}}>
@@ -4603,11 +4618,12 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
             {f.tipo==="fixa" && "Aparece todo mês, a partir do 1º vencimento (serve também p/ conta variável: ajuste o valor em cada mês)."}
             {f.tipo==="parcelada" && "Aparece só nos meses que faltam pagar, contando as parcelas (ex.: 3/5, 4/5, 5/5)."}
             {f.tipo==="avulsa" && "Aparece só uma vez, no mês do vencimento."}
+            {ehForn && "Cada compra é somada na conta do fornecedor. Depois é só tocar em Pagar e ele some da lista. Sempre Oficina."}
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <Inp label="Valor (R$)" type="number" value={f.valor} onChange={v=>set("valor",v)} placeholder="0,00" />
-          <Inp label={f.tipo==="fixa" ? "1º vencimento" : "Vencimento"} type="date" value={f.vencimento} onChange={v=>set("vencimento",v)} />
+          <Inp label={ehForn ? "Data da compra" : f.tipo==="fixa" ? "1º vencimento" : "Vencimento"} type="date" value={f.vencimento} onChange={v=>set("vencimento",v)} />
         </div>
         {f.tipo==="parcelada" && (
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -4616,20 +4632,79 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
           </div>
         )}
         {f.tipo==="fixa" && <Inp label="Termina em (opcional)" type="month" value={f.fim} onChange={v=>set("fim",v)} />}
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        {!ehForn && <div style={{display:"flex",flexDirection:"column",gap:4}}>
           <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Chave Pix / linha do boleto (padrão)</label>
           <textarea value={f.chave} onChange={e=>set("chave",e.target.value)} rows={3}
             placeholder="Cole aqui a chave Pix de quem você paga ou a linha digitável"
             style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical"}} />
           <div style={{fontSize:11,color:T.muted}}>Se o boleto muda todo mês, deixe vazio aqui e cole em cada mês ao abrir a conta.</div>
-        </div>
-        <Inp label="Observação (opcional)" value={f.obs} onChange={v=>set("obs",v)} />
-        <Btn full onClick={salvar}>Salvar</Btn>
+        </div>}
+        <Inp label={ehForn ? "Descrição da compra (opcional)" : "Observação (opcional)"} value={f.obs} onChange={v=>set("obs",v)} placeholder={ehForn ? "Ex.: filtro de ar, pastilha" : ""} />
+        <Btn full onClick={salvar}>{ehForn ? "Adicionar ao fornecedor" : "Salvar"}</Btn>
         {!novo && (confirmDel
           ? <Btn full v="red" onClick={()=>onDelete(conta.id)}>Confirmar: apagar conta e todos os meses</Btn>
           : <Btn full v="ghost" onClick={()=>setConfirmDel(true)}>🗑 Apagar conta</Btn>)}
       </div>
       {lendo && <ModalLerContaAP onResult={aplicarLeitura} onClose={()=>setLendo(false)} />}
+    </Modal>
+  );
+}
+
+function ModalFornecedorAP({ forn, onSave, onPagar, onClose }) {
+  const [valor, setValor] = useState("");
+  const [desc, setDesc] = useState("");
+  const [data, setData] = useState(today());
+  const [chave, setChave] = useState(forn.chave || "");
+  const [apagarId, setApagarId] = useState(null);
+  const [confirmPagar, setConfirmPagar] = useState(false);
+  const itens = [...(forn.itens || [])].sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  const total = totalFornAP(forn);
+  const addCompra = () => {
+    if (!(numAP(valor) > 0)) { toast("Informe o valor da compra"); return; }
+    onSave({ ...forn, chave: chave.trim(), itens: [...(forn.itens || []), { id: uid(), data: data || today(), desc: desc.trim(), valor: numAP(valor) }] });
+    setValor(""); setDesc("");
+  };
+  const removerItem = id => { onSave({ ...forn, chave: chave.trim(), itens: (forn.itens || []).filter(i => i.id !== id) }); setApagarId(null); };
+  const salvarChave = () => { if (chave.trim() !== (forn.chave || "")) onSave({ ...forn, chave: chave.trim() }); };
+  return (
+    <Modal title={"🧾 " + forn.nome} onClose={() => { salvarChave(); onClose(); }} w={480} z={210}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <Card style={{textAlign:"center",padding:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>TOTAL EM ABERTO</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.red}}>{fmtBRL(total)}</div>
+        </Card>
+        {itens.length === 0 && <div style={{fontSize:13,color:T.muted,textAlign:"center"}}>Nenhuma compra lançada.</div>}
+        {itens.map(i => (
+          <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,background:T.card,border:"1px solid "+T.border,borderRadius:8,padding:"8px 10px"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.desc || "Compra"}</div>
+              <div style={{fontSize:11,color:T.muted}}>{fmtDate(i.data)}</div>
+            </div>
+            <div style={{fontWeight:800,fontSize:14,color:T.text}}>{fmtBRL(numAP(i.valor))}</div>
+            {apagarId === i.id
+              ? <Btn sz="sm" v="red" onClick={()=>removerItem(i.id)}>Apagar?</Btn>
+              : <Btn sz="sm" v="ghost" onClick={()=>setApagarId(i.id)}>✕</Btn>}
+          </div>
+        ))}
+        <div style={{borderTop:"1px solid "+T.border,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>＋ Adicionar compra</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Inp label="Valor (R$)" type="number" value={valor} onChange={setValor} placeholder="0,00" />
+            <Inp label="Data" type="date" value={data} onChange={setData} />
+          </div>
+          <Inp label="Descrição (opcional)" value={desc} onChange={setDesc} placeholder="Ex.: filtro de ar" />
+          <Btn full onClick={addCompra}>＋ Adicionar compra</Btn>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Chave Pix do fornecedor (opcional)</label>
+          <textarea value={chave} onChange={e=>setChave(e.target.value)} onBlur={salvarChave} rows={2} placeholder="Cole aqui para copiar na hora de pagar"
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical"}} />
+          {chave.trim() && <Btn full v="blue" onClick={()=>copiarTextoAP(chave)}>📋 Copiar chave</Btn>}
+        </div>
+        {confirmPagar
+          ? <Btn full v="green" onClick={()=>onPagar(forn.id)}>Confirmar: pagou {fmtBRL(total)} — apagar fornecedor</Btn>
+          : <Btn full v="green" onClick={()=>setConfirmPagar(true)} disabled={total <= 0 && itens.length === 0}>✓ Pagar {fmtBRL(total)}</Btn>}
+      </div>
     </Modal>
   );
 }
@@ -4777,6 +4852,8 @@ function AbaAPagar({ somenteParticular = false }) {
   const [contaForm, setContaForm] = useState(undefined); // undefined=fechado, null=nova, objeto=editar
   const [ocorrAberta, setOcorrAberta] = useState(null);
   const [pagCartoes, setPagCartoes] = useState(getCartoesPagamentos);
+  const [fornAberto, setFornAberto] = useState(null); // id do fornecedor aberto
+  const [fornConfirmar, setFornConfirmar] = useState(null); // id aguardando 2º toque em Pagar
 
   const salvarDados = novo => { setApagar(novo); setDados(novo); };
   const cards = getCartoes();
@@ -4840,10 +4917,30 @@ function AbaAPagar({ somenteParticular = false }) {
     salvarDados({ ...dados, contas: existe ? dados.contas.map(x => x.id === c.id ? c : x) : [...dados.contas, c] });
     setContaForm(undefined);
   };
+  const fornecedores = somenteParticular ? [] : (dados.forn || []);
+  const totalForn = fornecedores.reduce((s, fo) => s + totalFornAP(fo), 0);
+  const salvarForn = ({ nome, valor, data, desc }) => {
+    const lista = dados.forn || [];
+    const chave = nome.trim().toLowerCase();
+    const item = { id: uid(), data, desc, valor };
+    const existe = lista.find(fo => fo.nome.trim().toLowerCase() === chave);
+    const nova = existe
+      ? lista.map(fo => fo.id === existe.id ? { ...fo, itens: [...(fo.itens || []), item] } : fo)
+      : [...lista, { id: uid(), nome, chave: "", itens: [item] }];
+    salvarDados({ ...dados, forn: nova });
+    setContaForm(undefined);
+    toast(existe ? "Compra somada em " + existe.nome : "Fornecedor cadastrado");
+  };
+  const atualizarForn = fo => salvarDados({ ...dados, forn: (dados.forn || []).map(x => x.id === fo.id ? fo : x) });
+  const pagarForn = id => {
+    salvarDados({ ...dados, forn: (dados.forn || []).filter(x => x.id !== id) });
+    setFornAberto(null); setFornConfirmar(null);
+    toast("Fornecedor pago!");
+  };
   const apagarConta = id => {
     const ocorr = {};
     Object.keys(dados.ocorr).forEach(k => { if (!k.startsWith(id + "|")) ocorr[k] = dados.ocorr[k]; });
-    salvarDados({ contas: dados.contas.filter(c => c.id !== id), ocorr });
+    salvarDados({ ...dados, contas: dados.contas.filter(c => c.id !== id), ocorr });
     setContaForm(undefined);
   };
 
@@ -4890,6 +4987,29 @@ function AbaAPagar({ somenteParticular = false }) {
 
       <Btn full onClick={()=>setContaForm(null)}>＋ Nova conta</Btn>
 
+      {fornecedores.length > 0 && (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <div style={{fontSize:12,color:T.muted,fontWeight:800,letterSpacing:0.8}}>🧾 FORNECEDORES EM ABERTO</div>
+            <div style={{fontSize:13,fontWeight:800,color:T.red}}>{fmtBRL(totalForn)}</div>
+          </div>
+          {[...fornecedores].sort((a, b) => a.nome.localeCompare(b.nome)).map(fo => {
+            const tot = totalFornAP(fo);
+            const confirmando = fornConfirmar === fo.id;
+            return (
+              <div key={fo.id} style={{background:T.card,border:"1px solid "+T.border,borderLeft:"5px solid "+T.blue,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
+                <div onClick={()=>setFornAberto(fo.id)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                  <div style={{fontWeight:800,fontSize:15,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fo.nome}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{(fo.itens||[]).length} {(fo.itens||[]).length===1?"compra":"compras"} · toque para ver</div>
+                </div>
+                <div style={{fontWeight:800,fontSize:16,color:T.text}}>{fmtBRL(tot)}</div>
+                <Btn sz="sm" v={confirmando?"green":"ghost"} onClick={()=>{ if (confirmando) pagarForn(fo.id); else { setFornConfirmar(fo.id); setTimeout(()=>setFornConfirmar(c=>c===fo.id?null:c), 4000); } }}>{confirmando ? "Confirmar" : "Pagar"}</Btn>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {itens.length===0 && <Card style={{textAlign:"center",color:T.muted,fontSize:13,padding:20}}>Nenhuma conta neste mês. Toque em “＋ Nova conta” para cadastrar.</Card>}
 
       {itens.map(item => {
@@ -4920,7 +5040,8 @@ function AbaAPagar({ somenteParticular = false }) {
         );
       })}
 
-      {contaForm !== undefined && <ModalContaAP conta={contaForm} somenteParticular={somenteParticular} onSave={salvarConta} onDelete={apagarConta} onClose={()=>setContaForm(undefined)} />}
+      {contaForm !== undefined && <ModalContaAP conta={contaForm} somenteParticular={somenteParticular} fornecedores={fornecedores} onSave={salvarConta} onSaveForn={salvarForn} onDelete={apagarConta} onClose={()=>setContaForm(undefined)} />}
+      {fornAberto && (() => { const fo = fornecedores.find(x => x.id === fornAberto); return fo ? <ModalFornecedorAP forn={fo} onSave={atualizarForn} onPagar={pagarForn} onClose={()=>setFornAberto(null)} /> : null; })()}
       {ocorrAberta && <ModalOcorrenciaAP item={ocorrAberta} onSave={salvarOcorr} onEditConta={()=>{ const c = ocorrAberta.conta; setOcorrAberta(null); setContaForm(c); }} onClose={()=>setOcorrAberta(null)} />}
     </div>
   );
