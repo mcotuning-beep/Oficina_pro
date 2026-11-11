@@ -4351,11 +4351,219 @@ const ocorrenciasMesAP = (contas, ocorr, comp) => {
   return out;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// LEITURA DE CONTA POR CÓDIGO (boleto bancário, conta de consumo e Pix)
+// ─────────────────────────────────────────────────────────────────────────
+const BANCOS_AP = { "001":"Banco do Brasil","033":"Santander","104":"Caixa","237":"Bradesco","341":"Itaú","260":"Nubank","077":"Inter","290":"PagBank","756":"Sicoob","748":"Sicredi","422":"Safra","212":"Original","336":"C6 Bank","323":"Mercado Pago","380":"PicPay","070":"BRB","041":"Banrisul","085":"Ailos","097":"Credisis","136":"Unicred","655":"Votorantim","623":"Pan","218":"BS2","208":"BTG","364":"Gerencianet/Efí" };
+const SEGMENTOS_AP = { "1":"Prefeitura","2":"Água/Saneamento","3":"Energia/Gás","4":"Telecomunicações","5":"Órgão governamental","6":"Carnê","7":"Multa de trânsito","9":"Outros" };
+const dvMod10AP = s => { let soma = 0, peso = 2; for (let i = s.length - 1; i >= 0; i--) { const p = Number(s[i]) * peso; soma += p > 9 ? p - 9 : p; peso = peso === 2 ? 1 : 2; } return (10 - (soma % 10)) % 10; };
+const dvMod11AP = (s, bancario) => { let soma = 0, peso = 2; for (let i = s.length - 1; i >= 0; i--) { soma += Number(s[i]) * peso; peso = peso === 9 ? 2 : peso + 1; } if (bancario) { const r = 11 - (soma % 11); return (r === 0 || r === 10 || r === 11) ? 1 : r; } const r = soma % 11; return (r === 0 || r === 1) ? 0 : 11 - r; };
+const isoAP = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const dataValidaAP = (iso) => { const d = new Date(iso + "T12:00:00"); return !isNaN(d.getTime()) && isoAP(d) === iso; };
+// Fator de vencimento do boleto: dias desde 07/10/1997; em 22/02/2025 o contador voltou a 1000.
+const vencimentoPorFatorAP = (fator) => {
+  const f = Number(fator);
+  if (!f) return "";
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const antigo = new Date(1997, 9, 7, 12); antigo.setDate(antigo.getDate() + f);
+  const cands = [antigo];
+  if (f >= 1000) { const novo = new Date(2025, 1, 22, 12); novo.setDate(novo.getDate() + (f - 1000)); cands.push(novo); }
+  cands.sort((a, b) => Math.abs(a - hoje) - Math.abs(b - hoje));
+  return isoAP(cands[0]);
+};
+const linhaDeBarrasBancarioAP = bc => {
+  const c1 = bc.slice(0, 4) + bc.slice(19, 24), c2 = bc.slice(24, 34), c3 = bc.slice(34, 44);
+  const f = c1 + dvMod10AP(c1), g = c2 + dvMod10AP(c2), h = c3 + dvMod10AP(c3);
+  return f.slice(0, 5) + "." + f.slice(5) + " " + g.slice(0, 5) + "." + g.slice(5) + " " + h.slice(0, 5) + "." + h.slice(5) + " " + bc[4] + " " + bc.slice(5, 19);
+};
+const parsePixAP = t => {
+  const tlv = (s) => { const o = {}; let i = 0; while (i + 4 <= s.length) { const id = s.slice(i, i + 2), len = parseInt(s.slice(i + 2, i + 4), 10); if (isNaN(len)) break; o[id] = s.slice(i + 4, i + 4 + len); i += 4 + len; } return o; };
+  const o = tlv(t);
+  const valor = o["54"] ? parseFloat(o["54"]) : null;
+  let nome = (o["59"] || "").trim();
+  nome = nome.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  return { tipo: "pix", nome: nome ? "Pix " + nome : "Pix", valor: valor && valor > 0 ? valor : null, vencimento: "", chave: t.trim(), aviso: "Pix copia e cola lido. O app guarda o código inteiro para você copiar e colar no banco." };
+};
+// Devolve { ok:true, ... } com os dados da conta, { ok:false, erro } se o código foi lido errado, ou null se não parece um código de pagamento.
+const lerCodigoContaAP = (raw) => {
+  const t = String(raw || "").trim();
+  if (!t) return null;
+  if (/^000201/.test(t) || /br\.gov\.bcb\.pix/i.test(t)) { const r = parsePixAP(t); return { ok: true, ...r }; }
+  const d = t.replace(/\D/g, "");
+  let bc = "";
+  if (d.length === 47) bc = d.slice(0, 4) + d[32] + d.slice(33, 47) + d.slice(4, 9) + d.slice(10, 20) + d.slice(21, 31);
+  else if (d.length === 48) bc = d.slice(0, 11) + d.slice(12, 23) + d.slice(24, 35) + d.slice(36, 47);
+  else if (d.length === 44) bc = d;
+  else return null;
+  if (bc[0] === "8") {
+    // Conta de consumo / arrecadação (água, luz, telefone, imposto...)
+    const mod11 = bc[2] === "8" || bc[2] === "9";
+    const dvGeral = mod11 ? dvMod11AP(bc.slice(0, 3) + bc.slice(4), false) : dvMod10AP(bc.slice(0, 3) + bc.slice(4));
+    if (dvGeral !== Number(bc[3])) return { ok: false, erro: "O código foi lido com erro. Tente de novo." };
+    const dvBloco = s => (mod11 ? dvMod11AP(s, false) : dvMod10AP(s));
+    const blocos = [bc.slice(0, 11), bc.slice(11, 22), bc.slice(22, 33), bc.slice(33, 44)];
+    const linha = blocos.map(b => b + dvBloco(b)).join(" ");
+    const valorEfetivo = bc[2] === "6" || bc[2] === "8";
+    const valor = valorEfetivo ? Number(bc.slice(4, 15)) / 100 : null;
+    // Vencimento: cada empresa guarda de um jeito; só aceita se achar UMA data plausível.
+    const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+    const min = new Date(hoje); min.setDate(min.getDate() - 60); const max = new Date(hoje); max.setDate(max.getDate() + 400);
+    const achados = [];
+    for (let i = 15; i + 8 <= 44; i++) { const s = bc.slice(i, i + 8); if (/^20\d{6}$/.test(s)) { const iso = s.slice(0, 4) + "-" + s.slice(4, 6) + "-" + s.slice(6, 8); if (dataValidaAP(iso)) { const dt = new Date(iso + "T12:00:00"); if (dt >= min && dt <= max && !achados.includes(iso)) achados.push(iso); } } }
+    const seg = SEGMENTOS_AP[bc[1]] || "Conta";
+    return { ok: true, tipo: "consumo", nome: seg, valor: valor && valor > 0 ? valor : null, vencimento: achados.length === 1 ? achados[0] : "", chave: linha, aviso: achados.length === 1 ? "Confira o vencimento." : "Não deu para ler o vencimento nesse tipo de conta: escolha a data." };
+  }
+  // Boleto bancário
+  const dvGeral = dvMod11AP(bc.slice(0, 4) + bc.slice(5), true);
+  if (dvGeral !== Number(bc[4])) return { ok: false, erro: "O código foi lido com erro. Tente de novo." };
+  const banco = BANCOS_AP[bc.slice(0, 3)] || "";
+  const valor = Number(bc.slice(9, 19)) / 100;
+  return { ok: true, tipo: "boleto", nome: banco ? "Boleto " + banco : "Boleto", valor: valor > 0 ? valor : null, vencimento: vencimentoPorFatorAP(bc.slice(5, 9)), chave: linhaDeBarrasBancarioAP(bc), aviso: "Confira o nome, o valor e o vencimento." };
+};
+
+const ZXING_URL_AP = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm";
+function ModalLerContaAP({ onResult, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const ativoRef = useRef(true);
+  const zxingRef = useRef(null);
+  const [msg, setMsg] = useState("Abrindo a câmera…");
+  const [texto, setTexto] = useState("");
+  const [camErro, setCamErro] = useState(false);
+
+  const parar = () => {
+    ativoRef.current = false;
+    try { if (zxingRef.current && zxingRef.current.reset) zxingRef.current.reset(); } catch {}
+    try { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+  };
+  useEffect(() => () => parar(), []);
+
+  const tratar = (raw) => {
+    const r = lerCodigoContaAP(raw);
+    if (!r) return false;
+    if (!r.ok) { setMsg("⚠️ " + r.erro); return false; }
+    parar();
+    onResult(r);
+    return true;
+  };
+
+  const carregarZxing = async () => {
+    const mod = await import(/* @vite-ignore */ ZXING_URL_AP);
+    const hints = new Map();
+    hints.set(mod.DecodeHintType.POSSIBLE_FORMATS, [mod.BarcodeFormat.ITF, mod.BarcodeFormat.CODE_128, mod.BarcodeFormat.QR_CODE]);
+    hints.set(mod.DecodeHintType.TRY_HARDER, true);
+    return { mod, reader: new mod.BrowserMultiFormatReader(hints) };
+  };
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("sem câmera");
+        const nativo = typeof window.BarcodeDetector !== "undefined";
+        if (nativo) {
+          let formatos = ["itf", "code_128", "qr_code"];
+          try { const sup = await window.BarcodeDetector.getSupportedFormats(); formatos = formatos.filter(f => sup.includes(f)); } catch {}
+          if (formatos.length) {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 } }, audio: false });
+            if (cancelado) { stream.getTracks().forEach(t => t.stop()); return; }
+            streamRef.current = stream;
+            const v = videoRef.current; v.srcObject = stream; await v.play();
+            setMsg("Aponte para o código de barras do boleto (ou o QR Code do Pix) e mantenha firme.");
+            const det = new window.BarcodeDetector({ formats: formatos });
+            const volta = async () => {
+              if (!ativoRef.current || cancelado) return;
+              try {
+                const achados = await det.detect(v);
+                for (const a of achados) { if (tratar(a.rawValue)) return; }
+              } catch {}
+              setTimeout(volta, 250);
+            };
+            volta();
+            return;
+          }
+        }
+        // Sem leitor nativo (ex.: iPhone): usa a biblioteca ZXing carregada da internet.
+        setMsg("Carregando o leitor…");
+        const { reader } = await carregarZxing();
+        if (cancelado) return;
+        zxingRef.current = reader;
+        setMsg("Aponte para o código de barras do boleto (ou o QR Code do Pix) e mantenha firme.");
+        reader.decodeFromVideoDevice(undefined, videoRef.current, (res) => { if (res && ativoRef.current) tratar(res.getText()); });
+      } catch (e) {
+        setCamErro(true);
+        setMsg("Não consegui abrir a câmera. Use “Escolher foto” ou cole o código abaixo.");
+      }
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  const lerFoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setMsg("Lendo a foto…");
+    try {
+      if (typeof window.BarcodeDetector !== "undefined") {
+        const det = new window.BarcodeDetector();
+        const bmp = await createImageBitmap(file);
+        const achados = await det.detect(bmp);
+        for (const a of achados) { if (tratar(a.rawValue)) return; }
+      }
+      const { reader } = await carregarZxing();
+      const url = URL.createObjectURL(file);
+      try { const res = await reader.decodeFromImageUrl(url); if (tratar(res.getText())) return; } finally { URL.revokeObjectURL(url); }
+      setMsg("Não consegui ler o código nessa foto. Tente de novo, mais perto e com boa luz, ou cole o código.");
+    } catch {
+      setMsg("Não consegui ler o código nessa foto. Tente de novo, mais perto e com boa luz, ou cole o código.");
+    }
+  };
+
+  const lerTexto = () => {
+    const r = lerCodigoContaAP(texto);
+    if (!r) { setMsg("Não reconheci esse código. Cole a linha digitável (47 ou 48 números) ou o Pix copia e cola."); return; }
+    if (!r.ok) { setMsg("⚠️ " + r.erro); return; }
+    parar(); onResult(r);
+  };
+
+  return (
+    <Modal title="📷 Ler conta pela câmera" onClose={() => { parar(); onClose(); }} w={480} z={230}>
+      <div style={{display:"grid",gap:12}}>
+        {!camErro && <video ref={videoRef} playsInline muted style={{width:"100%",maxHeight:300,background:"#000",borderRadius:10,objectFit:"cover"}} />}
+        <div style={{fontSize:12,color:T.sub}}>{msg}</div>
+        <label style={{display:"block"}}>
+          <input type="file" accept="image/*" capture="environment" onChange={lerFoto} style={{display:"none"}} />
+          <span style={{display:"block",textAlign:"center",background:"transparent",color:T.sub,border:"1px solid "+T.border,borderRadius:8,padding:"8px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>🖼️ Escolher foto / tirar foto</span>
+        </label>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Ou cole o código</label>
+          <textarea value={texto} onChange={e=>setTexto(e.target.value)} rows={2} placeholder="Linha digitável do boleto ou Pix copia e cola"
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"9px 12px",fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical"}} />
+          <Btn full v="blue" onClick={lerTexto} disabled={!texto.trim()}>Ler código colado</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
   const novo = !conta;
   const [f, setF] = useState(() => conta ? { ...conta, categoria: conta.categoria || "oficina" } : { nome: "", categoria: "particular", tipo: "fixa", valor: "", vencimento: today(), parcelaInicial: 1, parcelas: 2, fim: "", chave: "", obs: "" });
   const [confirmDel, setConfirmDel] = useState(false);
+  const [lendo, setLendo] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const aplicarLeitura = r => {
+    setF(p => ({
+      ...p,
+      tipo: "avulsa",
+      nome: p.nome.trim() ? p.nome : (r.nome || p.nome),
+      valor: r.valor != null ? String(r.valor) : p.valor,
+      vencimento: r.vencimento || p.vencimento,
+      chave: r.chave || p.chave,
+    }));
+    setLendo(false);
+    toast("Conta lida! " + (r.aviso || "Confira os dados e salve."));
+  };
   const salvar = () => {
     if (!f.nome.trim()) { toast("Informe o nome da conta"); return; }
     if (!f.vencimento) { toast("Informe o vencimento"); return; }
@@ -4374,6 +4582,7 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
   return (
     <Modal title={novo ? "Nova conta a pagar" : "Editar conta (todos os meses)"} onClose={onClose} w={480} z={210}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {novo && <Btn full v="blue" onClick={()=>setLendo(true)}>📷 Ler boleto / QR Pix pela câmera</Btn>}
         <Inp label="Nome" value={f.nome} onChange={v=>set("nome",v)} placeholder="Ex.: Aluguel, Enel, Boleto Monte Carlo" autoFocus={novo} />
         {!somenteParticular && (
           <div>
@@ -4420,6 +4629,7 @@ function ModalContaAP({ conta, somenteParticular, onSave, onDelete, onClose }) {
           ? <Btn full v="red" onClick={()=>onDelete(conta.id)}>Confirmar: apagar conta e todos os meses</Btn>
           : <Btn full v="ghost" onClick={()=>setConfirmDel(true)}>🗑 Apagar conta</Btn>)}
       </div>
+      {lendo && <ModalLerContaAP onResult={aplicarLeitura} onClose={()=>setLendo(false)} />}
     </Modal>
   );
 }
