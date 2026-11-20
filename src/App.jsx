@@ -4294,7 +4294,10 @@ function ModalEditarCartao({ card, onSave, onDelete, onClose }) {
 const MESES_NOME_AP = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 // forn: fornecedores com compras em aberto — [{ id, nome, chave, itens:[{ id, data, desc, valor }] }]. Pagou → o fornecedor é apagado.
 const getApagar = () => { try { const o = JSON.parse(localStorage.getItem(K.apagar) || "{}"); return { contas: Array.isArray(o.contas) ? o.contas : [], ocorr: (o.ocorr && typeof o.ocorr === "object") ? o.ocorr : {}, forn: Array.isArray(o.forn) ? o.forn : [] }; } catch { return { contas: [], ocorr: {}, forn: [] }; } };
-const totalFornAP = fo => (fo.itens || []).reduce((s, i) => s + numAP(i.valor), 0);
+// pagamentos: pagamentos parciais já feitos ao fornecedor — [{ id, data, valor }]. Saldo em aberto = compras − pagamentos.
+const totalComprasFornAP = fo => (fo.itens || []).reduce((s, i) => s + numAP(i.valor), 0);
+const totalPagoFornAP = fo => (fo.pagamentos || []).reduce((s, i) => s + numAP(i.valor), 0);
+const totalFornAP = fo => Math.round((totalComprasFornAP(fo) - totalPagoFornAP(fo)) * 100) / 100;
 const setApagar = obj => localStorage.setItem(K.apagar, JSON.stringify(obj));
 const pad2AP = n => String(n).padStart(2, "0");
 const chaveMesAP = comp => comp.ano + "-" + pad2AP(comp.mes + 1);
@@ -4657,8 +4660,22 @@ function ModalFornecedorAP({ forn, onSave, onPagar, onClose }) {
   const [chave, setChave] = useState(forn.chave || "");
   const [apagarId, setApagarId] = useState(null);
   const [confirmPagar, setConfirmPagar] = useState(false);
+  const [pagValor, setPagValor] = useState("");
+  const [pagData, setPagData] = useState(today());
   const itens = [...(forn.itens || [])].sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  const pagamentos = [...(forn.pagamentos || [])].sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  const totalCompras = totalComprasFornAP(forn);
+  const totalPago = totalPagoFornAP(forn);
   const total = totalFornAP(forn);
+  const addPagamento = () => {
+    const v = numAP(pagValor);
+    if (!(v > 0)) { toast("Informe o valor pago"); return; }
+    if (v > total + 0.004) { toast("O valor é maior que o saldo. Para quitar, use o botão Pagar."); return; }
+    onSave({ ...forn, chave: chave.trim(), pagamentos: [...(forn.pagamentos || []), { id: uid(), data: pagData || today(), valor: v }] });
+    setPagValor("");
+    toast("Pagamento registrado");
+  };
+  const removerPagamento = id => { onSave({ ...forn, chave: chave.trim(), pagamentos: (forn.pagamentos || []).filter(p => p.id !== id) }); setApagarId(null); };
   const addCompra = () => {
     if (!(numAP(valor) > 0)) { toast("Informe o valor da compra"); return; }
     onSave({ ...forn, chave: chave.trim(), itens: [...(forn.itens || []), { id: uid(), data: data || today(), desc: desc.trim(), valor: numAP(valor) }] });
@@ -4670,8 +4687,9 @@ function ModalFornecedorAP({ forn, onSave, onPagar, onClose }) {
     <Modal title={"🧾 " + forn.nome} onClose={() => { salvarChave(); onClose(); }} w={480} z={210}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <Card style={{textAlign:"center",padding:10}}>
-          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>TOTAL EM ABERTO</div>
-          <div style={{fontSize:22,fontWeight:800,color:T.red}}>{fmtBRL(total)}</div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700}}>{totalPago > 0 ? "AINDA EM ABERTO" : "TOTAL EM ABERTO"}</div>
+          <div style={{fontSize:22,fontWeight:800,color:total>0.004?T.red:T.green}}>{fmtBRL(total)}</div>
+          {totalPago > 0 && <div style={{fontSize:12,color:T.muted,marginTop:2}}>compras {fmtBRL(totalCompras)} − pago <b style={{color:T.green}}>{fmtBRL(totalPago)}</b></div>}
         </Card>
         {itens.length === 0 && <div style={{fontSize:13,color:T.muted,textAlign:"center"}}>Nenhuma compra lançada.</div>}
         {itens.map(i => (
@@ -4686,6 +4704,29 @@ function ModalFornecedorAP({ forn, onSave, onPagar, onClose }) {
               : <Btn sz="sm" v="ghost" onClick={()=>setApagarId(i.id)}>✕</Btn>}
           </div>
         ))}
+        {pagamentos.length > 0 && (
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>💵 Pagamentos feitos</div>
+            {pagamentos.map(pg => (
+              <div key={pg.id} style={{display:"flex",alignItems:"center",gap:8,background:T.green+"22",border:"1px solid "+T.green,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{flex:1,fontSize:12,color:T.sub}}>Pago em {fmtDate(pg.data)}</div>
+                <div style={{fontWeight:800,fontSize:14,color:T.green}}>− {fmtBRL(numAP(pg.valor))}</div>
+                {apagarId === pg.id
+                  ? <Btn sz="sm" v="red" onClick={()=>removerPagamento(pg.id)}>Apagar?</Btn>
+                  : <Btn sz="sm" v="ghost" onClick={()=>setApagarId(pg.id)}>✕</Btn>}
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{borderTop:"1px solid "+T.border,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>💵 Registrar pagamento parcial</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Inp label="Valor pago (R$)" type="number" value={pagValor} onChange={setPagValor} placeholder="0,00" />
+            <Inp label="Data" type="date" value={pagData} onChange={setPagData} />
+          </div>
+          <Btn full v="green" onClick={addPagamento}>💵 Registrar pagamento</Btn>
+          <div style={{fontSize:11,color:T.muted}}>O valor pago é descontado do total em aberto. Quando pagar o resto, use o botão Pagar lá embaixo.</div>
+        </div>
         <div style={{borderTop:"1px solid "+T.border,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
           <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>＋ Adicionar compra</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -4702,8 +4743,8 @@ function ModalFornecedorAP({ forn, onSave, onPagar, onClose }) {
           {chave.trim() && <Btn full v="blue" onClick={()=>copiarTextoAP(chave)}>📋 Copiar chave</Btn>}
         </div>
         {confirmPagar
-          ? <Btn full v="green" onClick={()=>onPagar(forn.id)}>Confirmar: pagou {fmtBRL(total)} — apagar fornecedor</Btn>
-          : <Btn full v="green" onClick={()=>setConfirmPagar(true)} disabled={total <= 0 && itens.length === 0}>✓ Pagar {fmtBRL(total)}</Btn>}
+          ? <Btn full v="green" onClick={()=>onPagar(forn.id)}>Confirmar: quitou {fmtBRL(total)} — apagar fornecedor</Btn>
+          : <Btn full v="green" onClick={()=>setConfirmPagar(true)}>✓ Pagar {totalPago > 0 ? "o resto: " : ""}{fmtBRL(total)}</Btn>}
       </div>
     </Modal>
   );
@@ -5000,7 +5041,7 @@ function AbaAPagar({ somenteParticular = false }) {
               <div key={fo.id} style={{background:T.card,border:"1px solid "+T.border,borderLeft:"5px solid "+T.blue,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
                 <div onClick={()=>setFornAberto(fo.id)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
                   <div style={{fontWeight:800,fontSize:15,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fo.nome}</div>
-                  <div style={{fontSize:11,color:T.muted}}>{(fo.itens||[]).length} {(fo.itens||[]).length===1?"compra":"compras"} · toque para ver</div>
+                  <div style={{fontSize:11,color:T.muted}}>{(fo.itens||[]).length} {(fo.itens||[]).length===1?"compra":"compras"}{totalPagoFornAP(fo)>0 ? " · já pago " + fmtBRL(totalPagoFornAP(fo)) : ""} · toque para ver</div>
                 </div>
                 <div style={{fontWeight:800,fontSize:16,color:T.text}}>{fmtBRL(tot)}</div>
                 <Btn sz="sm" v={confirmando?"green":"ghost"} onClick={()=>{ if (confirmando) pagarForn(fo.id); else { setFornConfirmar(fo.id); setTimeout(()=>setFornConfirmar(c=>c===fo.id?null:c), 4000); } }}>{confirmando ? "Confirmar" : "Pagar"}</Btn>
@@ -5653,47 +5694,123 @@ function AbaTaxas() {
 }
 
 // ── ABA PREÇOS PELÍCULA ─────────────────────────────────────────────────────
-// Edita os valores exibidos na página pública do catálogo (public/peliculas-scarpel.html).
-// Salvar aqui grava em localStorage (op_precos_peliculas), que sincroniza automaticamente
-// com a tabela "config" (chave="precos_peliculas") no Supabase — a página do catálogo lê
-// esse mesmo registro para montar os preços exibidos ao cliente.
+// Edita tudo que a página pública do catálogo mostra: preços das películas, linhas e extras de
+// película, e o PPF completo (grupos, peças, valores por tipo de carro e kits).
+// Salvar grava em localStorage (op_precos_peliculas), que sincroniza sozinho com a tabela "config"
+// (chave="precos_peliculas") no Supabase — as páginas peliculas.html, kit-pelicula.html e
+// kit-ppf.html leem esse mesmo registro.
 const CATALOGO_PELICULAS_URL = "https://mscarpel.vercel.app/peliculas.html";
+const PPF_CATS = ["Hatch","Sedan","SUV","Picape"];
+const PPF_PADRAO = {"grupos": [{"id": "frente", "g": "ext", "nome": "Frente"}, {"id": "laterais", "g": "ext", "nome": "Laterais"}, {"id": "traseira", "g": "ext", "nome": "Traseira"}, {"id": "tetovidros", "g": "ext", "nome": "Teto e vidros"}, {"id": "detalhes", "g": "ext", "nome": "Quinas, maçanetas e soleiras"}, {"id": "painel", "g": "int", "nome": "Painel"}, {"id": "console", "g": "int", "nome": "Console e câmbio"}, {"id": "volante", "g": "int", "nome": "Volante e comandos"}, {"id": "portasint", "g": "int", "nome": "Portas por dentro"}, {"id": "colunas", "g": "int", "nome": "Colunas, teto e porta-malas"}], "pecas": [{"id": "pcD", "gr": "frente", "nome": "Para-choque dianteiro", "p": [800, 900, 1000, 1100]}, {"id": "capo", "gr": "frente", "nome": "Capô", "p": [1200, 1300, 1500, 1600]}, {"id": "paraLamas", "gr": "frente", "nome": "Para-lamas dianteiros (par)", "p": [700, 750, 850, 900]}, {"id": "farois", "gr": "frente", "nome": "Faróis (par)", "p": [300, 300, 350, 350]}, {"id": "milha", "gr": "frente", "nome": "Faróis de milha (par)", "p": [120, 120, 150, 150]}, {"id": "grade", "gr": "frente", "nome": "Grade e moldura frontal", "p": [180, 180, 220, 250]}, {"id": "lip", "gr": "frente", "nome": "Spoiler / lip dianteiro", "p": [150, 150, 180, 200]}, {"id": "portasD", "gr": "laterais", "nome": "Portas dianteiras (par)", "p": [1000, 1100, 1300, 1300]}, {"id": "portasT", "gr": "laterais", "nome": "Portas traseiras (par)", "p": [900, 1000, 1200, 1000]}, {"id": "paraLamasT", "gr": "laterais", "nome": "Para-lamas traseiros (par)", "p": [700, 750, 850, 800]}, {"id": "retrovisores", "gr": "laterais", "nome": "Retrovisores (par)", "p": [300, 300, 350, 350]}, {"id": "colunasExt", "gr": "laterais", "nome": "Colunas A, B e C (preto piano)", "p": [350, 350, 400, 400]}, {"id": "saias", "gr": "laterais", "nome": "Saias laterais (par)", "p": [400, 400, 450, 450]}, {"id": "tampa", "gr": "traseira", "nome": "Tampa traseira", "p": [1000, 1100, 1300, 900], "nomeCat": {"hatch": "Tampa traseira", "sedan": "Porta-malas", "suv": "Tampa traseira", "picape": "Caçamba"}}, {"id": "pcT", "gr": "traseira", "nome": "Para-choque traseiro", "p": [700, 800, 900, 1000]}, {"id": "lanternas", "gr": "traseira", "nome": "Lanternas (par)", "p": [300, 300, 350, 350]}, {"id": "spoilerT", "gr": "traseira", "nome": "Spoiler / aerofólio traseiro", "p": [200, 200, 250, 150]}, {"id": "bordaMala", "gr": "traseira", "nome": "Borda do porta-malas", "p": [150, 150, 180, 180], "nomeCat": {"picape": "Borda da caçamba"}}, {"id": "teto", "gr": "tetovidros", "nome": "Teto", "p": [1100, 1200, 1500, 1400]}, {"id": "tetoSolar", "gr": "tetovidros", "nome": "Moldura do teto solar", "p": [300, 300, 400, 300]}, {"id": "faixaBrisa", "gr": "tetovidros", "nome": "Faixa do para-brisa", "p": [80, 80, 80, 80]}, {"id": "quinas", "gr": "detalhes", "nome": "Quinas de porta", "p": [200, 200, 250, 250]}, {"id": "conchas", "gr": "detalhes", "nome": "Conchas de maçaneta", "p": [150, 150, 180, 180]}, {"id": "soleiras", "gr": "detalhes", "nome": "Soleiras", "p": [250, 250, 300, 300]}, {"id": "painelInst", "gr": "painel", "nome": "Painel de instrumentos", "p": [110, 120, 150, 150]}, {"id": "tela", "gr": "painel", "nome": "Tela multimídia", "p": [130, 140, 160, 160]}, {"id": "painelAr", "gr": "painel", "nome": "Painel do ar-condicionado", "p": [110, 120, 140, 140]}, {"id": "saidasAr", "gr": "painel", "nome": "Saídas de ar (molduras)", "p": [100, 100, 120, 120]}, {"id": "portaLuvas", "gr": "painel", "nome": "Moldura do passageiro / porta-luvas", "p": [150, 150, 180, 180]}, {"id": "console", "gr": "console", "nome": "Console central e câmbio", "p": [150, 160, 200, 200]}, {"id": "apoioBraco", "gr": "console", "nome": "Apoio de braço", "p": [100, 100, 120, 120]}, {"id": "botoesVidro", "gr": "console", "nome": "Botões de vidro e travas", "p": [90, 90, 100, 100]}, {"id": "volante", "gr": "volante", "nome": "Detalhes do volante", "p": [80, 80, 100, 100]}, {"id": "alavancas", "gr": "volante", "nome": "Alavancas e coluna de direção", "p": [70, 70, 80, 80]}, {"id": "portasIntD", "gr": "portasint", "nome": "Painéis das portas dianteiras (par)", "p": [150, 150, 200, 200]}, {"id": "portasIntT", "gr": "portasint", "nome": "Painéis das portas traseiras (par)", "p": [150, 150, 200, 150]}, {"id": "macanetasInt", "gr": "portasint", "nome": "Maçanetas internas", "p": [120, 120, 140, 140]}, {"id": "soleirasInt", "gr": "portasint", "nome": "Soleiras internas (scuff)", "p": [200, 200, 240, 240]}, {"id": "colunasInt", "gr": "colunas", "nome": "Colunas internas (A, B e C)", "p": [200, 200, 250, 250]}, {"id": "lateraisMala", "gr": "colunas", "nome": "Laterais do porta-malas", "p": [200, 200, 250, 150], "nomeCat": {"picape": "Laterais da cabine traseira"}}, {"id": "bancosFundo", "gr": "colunas", "nome": "Fundo dos encostos dos bancos", "p": [150, 150, 180, 180]}], "kits": [{"id": "frontal", "nome": "Kit Frontal", "tag": "Contra pedrisco", "catalogo": true, "desc": "A frente do carro é a parte que mais recebe pedrisco e impacto de estrada. Esse kit cobre as áreas mais expostas da dianteira.", "ids": ["pcD", "capo", "paraLamas", "farois", "retrovisores"], "p": [0, 0, 0, 0]}, {"id": "essencial", "nome": "Kit Essencial", "tag": "Proteção do dia a dia", "catalogo": true, "desc": "As áreas que mais riscam no uso diário: a quina da porta ao abrir, a concha da maçaneta, a soleira ao entrar e sair e a tela da multimídia.", "ids": ["quinas", "conchas", "soleiras", "tela"], "p": [0, 0, 0, 0]}, {"id": "interno", "nome": "Kit PPF Interno", "tag": "Painel e telas", "catalogo": true, "desc": "Protege as superfícies que mais sofrem com riscos e marcas de dedo dentro do carro, mantendo o visual de novo.", "ids": ["painelInst", "tela", "painelAr", "console", "volante"], "p": [515, 550, 650, 650]}, {"id": "full", "nome": "Kit Full", "tag": "Cobertura ampla", "catalogo": true, "desc": "Para quem quer proteger o carro todo. No montador você parte do kit completo e ajusta o que quiser tirar ou acrescentar.", "ids": ["pcD", "capo", "paraLamas", "farois", "retrovisores", "portasD", "portasT", "paraLamasT", "teto", "tampa", "pcT", "lanternas", "quinas", "conchas", "soleiras"], "p": [0, 0, 0, 0]}, {"id": "quinaMacaneta", "nome": "Kit quina + maçaneta", "tag": "", "catalogo": false, "desc": "", "ids": ["quinas", "conchas"], "p": [0, 0, 0, 0]}, {"id": "quinaMacanetaSoleira", "nome": "Kit quina + maçaneta + soleira", "tag": "", "catalogo": false, "desc": "", "ids": ["quinas", "conchas", "soleiras"], "p": [500, 500, 550, 550]}]};
+const novoIdCatalogo = () => "n" + Math.random().toString(36).slice(2, 8);
+const copiaProf = o => JSON.parse(JSON.stringify(o));
 
 function AbaPrecosPeliculas({ isAdmin = true }) {
-  const [precos, setPrecosState] = useState(getPrecosPeliculas);
+  const [precos, setPrecosState] = useState(() => {
+    const b = getPrecosPeliculas();
+    return { ...b,
+      ppf: (b.ppf && Array.isArray(b.ppf.pecas) && Array.isArray(b.ppf.grupos) && Array.isArray(b.ppf.kits)) ? b.ppf : copiaProf(PPF_PADRAO),
+      extrasPel: Array.isArray(b.extrasPel) ? b.extrasPel : [],
+      linhasExtras: Array.isArray(b.linhasExtras) ? b.linhasExtras : [] };
+  });
   const [salvando, setSalvando] = useState(false);
+  const [grupoAberto, setGrupoAberto] = useState(null);
+  const [kitAberto, setKitAberto] = useState(null);
+  const [novoGrupo, setNovoGrupo] = useState({ nome:"", g:"ext" });
 
   const compartilharCatalogo = async () => {
-    const texto = "Confira nosso catálogo de películas automotivas:";
+    const texto = "Confira nosso catálogo de películas e PPF:";
     try {
       if (navigator.share) {
-        await navigator.share({ title: "Catálogo de Películas — M.Scarpel", text: texto, url: CATALOGO_PELICULAS_URL });
+        await navigator.share({ title: "Catálogo M.Scarpel", text: texto, url: CATALOGO_PELICULAS_URL });
         return;
       }
     } catch (e) { if (e.name === "AbortError") return; }
-    // Sem suporte a compartilhamento nativo (ex: desktop): abre no WhatsApp com o link já no texto.
     const msg = encodeURIComponent(texto + " " + CATALOGO_PELICULAS_URL);
     window.open("https://wa.me/5511939228558?text=" + msg, "_blank");
   };
 
+  const num = v => v === "" ? "" : parseFloat(v);
   const upd = (path, valor) => {
-    const num = valor === "" ? "" : parseFloat(valor);
+    const n = num(valor);
     setPrecosState(p => {
       const novo = {...p};
-      if (path.length === 1) { novo[path[0]] = num; }
-      else { novo[path[0]] = {...novo[path[0]], [path[1]]: num}; }
+      if (path.length === 1) { novo[path[0]] = n; }
+      else { novo[path[0]] = {...novo[path[0]], [path[1]]: n}; }
       return novo;
     });
   };
+  const setPpf = fn => setPrecosState(p => ({...p, ppf: fn(p.ppf)}));
+
+  // PPF — grupos
+  const addGrupo = () => {
+    const nome = novoGrupo.nome.trim();
+    if (!nome) { toast("Digite o nome do grupo."); return; }
+    const id = novoIdCatalogo();
+    setPpf(pp => ({...pp, grupos:[...pp.grupos, {id, g:novoGrupo.g, nome}]}));
+    setNovoGrupo({ nome:"", g:novoGrupo.g }); setGrupoAberto(id);
+  };
+  const updGrupo = (id, campo, v) => setPpf(pp => ({...pp, grupos: pp.grupos.map(g => g.id===id ? {...g, [campo]:v} : g)}));
+  const delGrupo = id => {
+    if (!window.confirm("Remover este grupo e todas as peças dele? Elas também saem dos kits.")) return;
+    setPpf(pp => {
+      const sai = pp.pecas.filter(x => x.gr===id).map(x => x.id);
+      return {...pp, grupos: pp.grupos.filter(g => g.id!==id), pecas: pp.pecas.filter(x => x.gr!==id), kits: pp.kits.map(k => ({...k, ids: k.ids.filter(i => !sai.includes(i))}))};
+    });
+  };
+  // PPF — peças
+  const addPeca = gid => {
+    const id = novoIdCatalogo();
+    setPpf(pp => ({...pp, pecas:[...pp.pecas, {id, gr:gid, nome:"Nova peça", p:[0,0,0,0]}]}));
+  };
+  const updPeca = (id, campo, v) => setPpf(pp => ({...pp, pecas: pp.pecas.map(x => x.id===id ? {...x, [campo]:v} : x)}));
+  const updPecaPreco = (id, i, v) => setPpf(pp => ({...pp, pecas: pp.pecas.map(x => x.id===id ? {...x, p: [0,1,2,3].map(k => k===i ? num(v) : (x.p||[])[k])} : x)}));
+  const delPeca = id => {
+    if (!window.confirm("Remover esta peça? Ela também sai dos kits.")) return;
+    setPpf(pp => ({...pp, pecas: pp.pecas.filter(x => x.id!==id), kits: pp.kits.map(k => ({...k, ids: k.ids.filter(i => i!==id)}))}));
+  };
+  // PPF — kits
+  const addKit = () => {
+    const id = novoIdCatalogo();
+    setPpf(pp => ({...pp, kits:[...pp.kits, {id, nome:"Novo kit", tag:"", catalogo:false, desc:"", ids:[], p:[0,0,0,0]}]}));
+    setKitAberto(id);
+  };
+  const updKit = (id, campo, v) => setPpf(pp => ({...pp, kits: pp.kits.map(k => k.id===id ? {...k, [campo]:v} : k)}));
+  const updKitPreco = (id, i, v) => setPpf(pp => ({...pp, kits: pp.kits.map(k => k.id===id ? {...k, p: [0,1,2,3].map(x => x===i ? num(v) : (k.p||[])[x])} : k)}));
+  const toggleKitPeca = (kid, pid) => setPpf(pp => ({...pp, kits: pp.kits.map(k => k.id===kid ? {...k, ids: k.ids.includes(pid) ? k.ids.filter(i => i!==pid) : [...k.ids, pid]} : k)}));
+  const delKit = id => { if (window.confirm("Remover este kit?")) setPpf(pp => ({...pp, kits: pp.kits.filter(k => k.id!==id)})); };
+  // Películas — extras e linhas novas
+  const addExtra = () => setPrecosState(p => ({...p, extrasPel:[...p.extrasPel, {id:novoIdCatalogo(), nome:"", det:"", valor:0}]}));
+  const updExtra = (id, campo, v) => setPrecosState(p => ({...p, extrasPel: p.extrasPel.map(x => x.id===id ? {...x, [campo]:v} : x)}));
+  const delExtra = id => setPrecosState(p => ({...p, extrasPel: p.extrasPel.filter(x => x.id!==id)}));
+  const addLinha = () => setPrecosState(p => ({...p, linhasExtras:[...p.linhasExtras, {id:novoIdCatalogo(), nome:"", garantia:"", desc:"", lateralTraseiro:0, paraBrisa:0}]}));
+  const updLinha = (id, campo, v) => setPrecosState(p => ({...p, linhasExtras: p.linhasExtras.map(x => x.id===id ? {...x, [campo]:v} : x)}));
+  const delLinha = id => { if (window.confirm("Remover esta linha de película?")) setPrecosState(p => ({...p, linhasExtras: p.linhasExtras.filter(x => x.id!==id)})); };
 
   const salvar = () => {
     setSalvando(true);
-    setPrecosPeliculas(precos);
+    const n = v => { const x = parseFloat(v); return isNaN(x) ? 0 : x; };
+    const p4 = a => [0,1,2,3].map(i => n((a||[])[i]));
+    const limpo = {...precos,
+      ppf: {
+        grupos: precos.ppf.grupos.map(g => ({ id:g.id, g:g.g==="int"?"int":"ext", nome:(g.nome||"").trim() || "Grupo" })),
+        pecas: precos.ppf.pecas.map(x => ({ id:x.id, gr:x.gr, nome:(x.nome||"").trim() || "Peça", ...(x.nomeCat ? {nomeCat:x.nomeCat} : {}), p:p4(x.p) })),
+        kits: precos.ppf.kits.map(k => ({ id:k.id, nome:(k.nome||"").trim() || "Kit", tag:k.tag||"", catalogo:!!k.catalogo, desc:k.desc||"", ids:k.ids, p:p4(k.p) })),
+      },
+      extrasPel: precos.extrasPel.filter(x => (x.nome||"").trim()).map(x => ({ id:x.id, nome:x.nome.trim(), det:x.det||"", valor:n(x.valor) })),
+      linhasExtras: precos.linhasExtras.filter(x => (x.nome||"").trim()).map(x => ({ id:x.id, nome:x.nome.trim(), garantia:x.garantia||"", desc:x.desc||"", lateralTraseiro:n(x.lateralTraseiro), paraBrisa:n(x.paraBrisa) })),
+    };
+    setPrecosPeliculas(limpo);
+    setPrecosState(limpo);
     setTimeout(()=>setSalvando(false), 400);
-    toast("Preços do catálogo atualizados!");
+    toast("Catálogo atualizado! As páginas dos clientes já mostram os novos valores.");
   };
 
-  const restaurar = () => { setPrecosState(PRECOS_PELICULAS_PADRAO); toast("Valores padrão restaurados (clique em Salvar para confirmar)."); };
+  const restaurar = () => {
+    if (!window.confirm("Voltar tudo aos valores padrão? Peças, kits e itens que você criou serão perdidos (só vale depois de Salvar).")) return;
+    setPrecosState({ ...PRECOS_PELICULAS_PADRAO, ppf: copiaProf(PPF_PADRAO), extrasPel: [], linhasExtras: [] });
+    toast("Valores padrão carregados (clique em Salvar para confirmar).");
+  };
 
   const linhas = [
     {grupo:"profissional", titulo:"Linha Profissional", campos:[["lateralTraseiro","Laterais e traseiro"],["paraBrisa","Para-brisa"]]},
@@ -5701,15 +5818,26 @@ function AbaPrecosPeliculas({ isAdmin = true }) {
     {grupo:"nanoCeramica", titulo:"Linha Nano Cerâmica", campos:[["lateralTraseiro","Laterais e traseiro"],["paraBrisa","Para-brisa"]]},
     {grupo:"ps8", titulo:"Antivandalismo PS8", campos:[["incolor","Incolor"],["comProfissional","+ Profissional"],["comNanoCarbono","+ Nano Carbono"],["comNanoCeramica","+ Nano Cerâmica"]]},
   ];
+  const titulo = (t, sub) => (
+    <div style={{margin:"22px 0 10px"}}>
+      <div style={{fontWeight:800,color:T.accent,fontSize:15}}>{t}</div>
+      {sub && <div style={{fontSize:12,color:T.muted,marginTop:2}}>{sub}</div>}
+    </div>
+  );
+  const grade4 = (valores, onChange) => (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8}}>
+      {PPF_CATS.map((c,i) => <Inp key={c} label={c} type="number" value={(valores||[])[i] ?? ""} onChange={v=>onChange(i,v)} placeholder="0" />)}
+    </div>
+  );
 
   return (
     <div>
       <div style={{marginBottom:16}}>
-        <div style={{fontWeight:700,color:T.text,marginBottom:2}}>{isAdmin ? "Preços do Catálogo de Películas" : "Catálogo de Películas"}</div>
+        <div style={{fontWeight:700,color:T.text,marginBottom:2}}>{isAdmin ? "Catálogo: Películas e PPF" : "Catálogo M.Scarpel"}</div>
         <div style={{fontSize:12,color:T.muted,marginBottom:10}}>
           {isAdmin
-            ? 'Os valores aqui alimentam direto a página que os clientes veem. PPF continua "a combinar" e não é editável aqui.'
-            : "Envie o catálogo completo para o cliente pelo WhatsApp — com todas as linhas, tonalidades e valores atualizados."}
+            ? "Tudo que o cliente vê no catálogo e nos montadores de kit sai daqui: valores, peças, kits e itens novos. Depois de mexer, toque em Salvar."
+            : "Envie o catálogo completo para o cliente pelo WhatsApp — películas, PPF e os montadores de kit, sempre com os valores atualizados."}
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           <Btn v="blue" onClick={compartilharCatalogo}>📤 Compartilhar Catálogo</Btn>
@@ -5719,31 +5847,173 @@ function AbaPrecosPeliculas({ isAdmin = true }) {
 
       {!isAdmin && (
         <Card style={{padding:14,color:T.sub,fontSize:13,lineHeight:1.5}}>
-          O cliente recebe um link com o catálogo completo, o simulador de tonalidade e os preços sempre atualizados.
+          O cliente recebe um link com o catálogo completo, o simulador de tonalidade, os montadores de kit e os preços sempre atualizados.
         </Card>
       )}
 
-      {isAdmin && <div style={{display:"grid",gap:12}}>
-        {linhas.map(l => (
-          <Card key={l.grupo} style={{padding:14}}>
-            <div style={{fontWeight:700,marginBottom:10,color:T.text}}>{l.titulo}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-              {l.campos.map(([campo,label]) => (
-                <Inp key={campo} label={label} type="number" value={precos[l.grupo]?.[campo] ?? ""} onChange={v=>upd([l.grupo,campo],v)} placeholder="0,00" />
-              ))}
+      {isAdmin && <div>
+        {titulo("🪟 Películas de vidro","Valores das linhas e da remoção.")}
+        <div style={{display:"grid",gap:12}}>
+          {linhas.map(l => (
+            <Card key={l.grupo} style={{padding:14}}>
+              <div style={{fontWeight:700,marginBottom:10,color:T.text}}>{l.titulo}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+                {l.campos.map(([campo,label]) => (
+                  <Inp key={campo} label={label} type="number" value={precos[l.grupo]?.[campo] ?? ""} onChange={v=>upd([l.grupo,campo],v)} placeholder="0,00" />
+                ))}
+              </div>
+            </Card>
+          ))}
+          <Card style={{padding:14}}>
+            <div style={{fontWeight:700,marginBottom:10,color:T.text}}>Remoção de película antiga</div>
+            <div style={{maxWidth:220}}>
+              <Inp label="Taxa de remoção" type="number" value={precos.remocao ?? ""} onChange={v=>upd(["remocao"],v)} placeholder="0,00" />
             </div>
           </Card>
-        ))}
-        <Card style={{padding:14}}>
-          <div style={{fontWeight:700,marginBottom:10,color:T.text}}>Remoção de película antiga</div>
-          <div style={{maxWidth:220}}>
-            <Inp label="Taxa de remoção" type="number" value={precos.remocao ?? ""} onChange={v=>upd(["remocao"],v)} placeholder="0,00" />
-          </div>
-        </Card>
+        </div>
+
+        {titulo("➕ Linhas de película novas","Aparecem no catálogo e no montador de kit, junto das linhas acima.")}
+        <div style={{display:"grid",gap:12}}>
+          {precos.linhasExtras.map(x => (
+            <Card key={x.id} style={{padding:14}}>
+              <div style={{display:"grid",gap:10}}>
+                <Inp label="Nome da linha" value={x.nome} onChange={v=>updLinha(x.id,"nome",v)} placeholder="Ex.: Linha Premium" />
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+                  <Inp label="Garantia" value={x.garantia} onChange={v=>updLinha(x.id,"garantia",v)} placeholder="Ex.: 5 anos de garantia" />
+                  <Inp label="Laterais e traseiro (R$)" type="number" value={x.lateralTraseiro ?? ""} onChange={v=>updLinha(x.id,"lateralTraseiro",num(v))} placeholder="0,00" />
+                  <Inp label="Para-brisa (R$)" type="number" value={x.paraBrisa ?? ""} onChange={v=>updLinha(x.id,"paraBrisa",num(v))} placeholder="0,00" />
+                </div>
+                <Inp label="Descrição curta" value={x.desc} onChange={v=>updLinha(x.id,"desc",v)} placeholder="O que essa linha tem de especial" />
+                <div><Btn v="red" sz="sm" onClick={()=>delLinha(x.id)}>Remover linha</Btn></div>
+              </div>
+            </Card>
+          ))}
+          <div><Btn v="ghost" onClick={addLinha}>+ Nova linha de película</Btn></div>
+        </div>
+
+        {titulo("➕ Extras do kit de película","Itens que o cliente pode marcar no montador (ex.: faixa degradê, teto solar, película no farol).")}
+        <div style={{display:"grid",gap:12}}>
+          {precos.extrasPel.map(x => (
+            <Card key={x.id} style={{padding:14}}>
+              <div style={{display:"grid",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:10}}>
+                  <Inp label="Nome" value={x.nome} onChange={v=>updExtra(x.id,"nome",v)} placeholder="Ex.: Teto solar" />
+                  <Inp label="Valor (R$)" type="number" value={x.valor ?? ""} onChange={v=>updExtra(x.id,"valor",num(v))} placeholder="0,00" />
+                </div>
+                <Inp label="Detalhe (opcional)" value={x.det} onChange={v=>updExtra(x.id,"det",v)} placeholder="Frase curta que aparece abaixo do nome" />
+                <div><Btn v="red" sz="sm" onClick={()=>delExtra(x.id)}>Remover extra</Btn></div>
+              </div>
+            </Card>
+          ))}
+          <div><Btn v="ghost" onClick={addExtra}>+ Novo extra</Btn></div>
+        </div>
+
+        {titulo("🛡️ PPF — peças e valores","Valor de cada peça por tipo de carro. Abra um grupo para editar, remover ou acrescentar peças.")}
+        <div style={{display:"grid",gap:10}}>
+          {precos.ppf.grupos.map(g => {
+            const pecas = precos.ppf.pecas.filter(x => x.gr===g.id);
+            const aberto = grupoAberto===g.id;
+            return (
+              <Card key={g.id} style={{padding:0,overflow:"hidden"}}>
+                <div onClick={()=>setGrupoAberto(aberto?null:g.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,color:T.text}}>{g.nome}</div>
+                    <div style={{fontSize:11,color:T.muted}}>{g.g==="int"?"Interior":"Exterior"} · {pecas.length} {pecas.length===1?"peça":"peças"}</div>
+                  </div>
+                  <div style={{color:T.sub,fontSize:16}}>{aberto?"▲":"▼"}</div>
+                </div>
+                {aberto && (
+                  <div style={{padding:"4px 14px 14px",borderTop:"1px solid "+T.border,display:"grid",gap:14}}>
+                    <div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:10,marginTop:10}}>
+                      <Inp label="Nome do grupo" value={g.nome} onChange={v=>updGrupo(g.id,"nome",v)} />
+                      <Sel label="Fica em" value={g.g} onChange={v=>updGrupo(g.id,"g",v)} options={[{v:"ext",l:"Exterior"},{v:"int",l:"Interior"}]} />
+                    </div>
+                    {pecas.map(x => (
+                      <div key={x.id} style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:10,display:"grid",gap:8}}>
+                        <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                          <div style={{flex:1,minWidth:0}}><Inp label="Peça" value={x.nome} onChange={v=>updPeca(x.id,"nome",v)} /></div>
+                          <Btn v="red" sz="sm" onClick={()=>delPeca(x.id)}>✕</Btn>
+                        </div>
+                        {grade4(x.p, (i,v)=>updPecaPreco(x.id,i,v))}
+                      </div>
+                    ))}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      <Btn v="ghost" sz="sm" onClick={()=>addPeca(g.id)}>+ Nova peça neste grupo</Btn>
+                      <Btn v="red" sz="sm" onClick={()=>delGrupo(g.id)}>Remover grupo</Btn>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+          <Card style={{padding:14}}>
+            <div style={{fontWeight:700,color:T.text,marginBottom:8}}>+ Novo grupo de peças</div>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:10,marginBottom:10}}>
+              <Inp label="Nome do grupo" value={novoGrupo.nome} onChange={v=>setNovoGrupo(s=>({...s,nome:v}))} placeholder="Ex.: Rodas e freios" />
+              <Sel label="Fica em" value={novoGrupo.g} onChange={v=>setNovoGrupo(s=>({...s,g:v}))} options={[{v:"ext",l:"Exterior"},{v:"int",l:"Interior"}]} />
+            </div>
+            <Btn v="ghost" sz="sm" onClick={addGrupo}>Criar grupo</Btn>
+          </Card>
+        </div>
+
+        {titulo("📦 PPF — kits prontos","Botões de kit no montador. Preço fechado: se preencher, o cliente ganha o desconto quando marcar todas as peças do kit (deixe 0 para somar as peças normalmente). Marque \"Mostrar no catálogo\" para o kit virar um card.")}
+        <div style={{display:"grid",gap:10}}>
+          {precos.ppf.kits.map(k => {
+            const aberto = kitAberto===k.id;
+            return (
+              <Card key={k.id} style={{padding:0,overflow:"hidden"}}>
+                <div onClick={()=>setKitAberto(aberto?null:k.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,color:T.text}}>{k.nome || "Kit"}</div>
+                    <div style={{fontSize:11,color:T.muted}}>{k.ids.length} peças{k.catalogo?" · aparece no catálogo":""}</div>
+                  </div>
+                  <div style={{color:T.sub,fontSize:16}}>{aberto?"▲":"▼"}</div>
+                </div>
+                {aberto && (
+                  <div style={{padding:"10px 14px 14px",borderTop:"1px solid "+T.border,display:"grid",gap:12}}>
+                    <Inp label="Nome do kit" value={k.nome} onChange={v=>updKit(k.id,"nome",v)} />
+                    <Inp label="Etiqueta (opcional)" value={k.tag||""} onChange={v=>updKit(k.id,"tag",v)} placeholder="Ex.: Contra pedrisco" />
+                    <Inp label="Descrição para o catálogo" value={k.desc||""} onChange={v=>updKit(k.id,"desc",v)} placeholder="Texto curto que aparece no card" />
+                    <label style={{display:"flex",alignItems:"center",gap:8,color:T.sub,fontSize:13}}>
+                      <input type="checkbox" checked={!!k.catalogo} onChange={e=>updKit(k.id,"catalogo",e.target.checked)} /> Mostrar no catálogo
+                    </label>
+                    <div>
+                      <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Preço fechado do kit (0 = sem desconto)</div>
+                      {grade4(k.p, (i,v)=>updKitPreco(k.id,i,v))}
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Peças do kit</div>
+                      <div style={{display:"grid",gap:10}}>
+                        {precos.ppf.grupos.map(g => {
+                          const ps = precos.ppf.pecas.filter(x => x.gr===g.id);
+                          if (!ps.length) return null;
+                          return (
+                            <div key={g.id}>
+                              <div style={{fontSize:12,color:T.accent,fontWeight:700,marginBottom:4}}>{g.nome}</div>
+                              <div style={{display:"grid",gap:4}}>
+                                {ps.map(x => (
+                                  <label key={x.id} style={{display:"flex",alignItems:"center",gap:8,color:T.text,fontSize:13}}>
+                                    <input type="checkbox" checked={k.ids.includes(x.id)} onChange={()=>toggleKitPeca(k.id,x.id)} /> {x.nome}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div><Btn v="red" sz="sm" onClick={()=>delKit(k.id)}>Remover kit</Btn></div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+          <div><Btn v="ghost" onClick={addKit}>+ Novo kit</Btn></div>
+        </div>
       </div>}
 
-      {isAdmin && <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
-        <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando..." : "Salvar Preços"}</Btn>
+      {isAdmin && <div style={{display:"flex",justifyContent:"flex-end",marginTop:20,position:"sticky",bottom:10}}>
+        <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando..." : "Salvar Catálogo"}</Btn>
       </div>}
     </div>
   );

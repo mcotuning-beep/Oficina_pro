@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M.Scarpel — Monte seu kit de PPF</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+  :root{ --bg:#101418; --bg-card:#171c22; --bg-card-hover:#1d232a; --line:#2a3138; --amber:#e8a33d; --amber-dim:#8a6a30; --teal:#4fb7ab; --text:#ecebe7; --text-dim:#9aa3ab; --text-faint:#656d74; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  [hidden]{display:none!important}
+  body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; -webkit-font-smoothing:antialiased; }
+  .noise{ position:fixed; inset:0; pointer-events:none; opacity:.035; z-index:1; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  header{ padding:36px 24px 24px; text-align:center; border-bottom:1px solid var(--line); position:relative; }
+  .back{ position:absolute; left:16px; top:16px; color:var(--text-dim); text-decoration:none; font-size:13px; border:1px solid var(--line); border-radius:20px; padding:6px 12px; }
+  .back:hover{ color:var(--text); border-color:var(--amber-dim); }
+  .eyebrow{ font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:var(--amber); margin:14px 0 12px; }
+  h1{ font-family:'Oswald',sans-serif; font-weight:700; font-size:clamp(28px,6vw,42px); letter-spacing:-.01em; margin-bottom:10px; }
+  header p{ color:var(--text-dim); font-size:15px; max-width:520px; margin:0 auto; }
+  main{ max-width:980px; margin:0 auto; padding:28px 16px 40px; position:relative; z-index:2; }
+  .grid2{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+  @media(min-width:860px){ .grid2{ grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); align-items:start; } .resumo{ position:sticky; top:16px; } }
+  .panel{ background:var(--bg-card); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:18px; min-width:0; }
+  h2{ font-family:'Oswald',sans-serif; font-size:13px; letter-spacing:.15em; text-transform:uppercase; color:var(--text-faint); font-weight:500; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:12px; font-weight:600; color:var(--text-dim); }
+  input[type=text]{ width:100%; background:#0d1115; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:11px 12px; font:inherit; }
+  input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible,select:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+  .hint{ font-size:12px; color:var(--text-faint); min-height:16px; }
+  .seg{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+  .seg button{ padding:10px 4px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-dim); font:inherit; font-family:'Oswald',sans-serif; letter-spacing:.03em; cursor:pointer; }
+  .seg button:hover{ border-color:var(--amber-dim); color:var(--text); }
+  .seg button[aria-pressed=true]{ background:var(--amber); border-color:var(--amber); color:#14100a; font-weight:600; }
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ border:1px dashed var(--amber-dim); background:transparent; color:var(--text); border-radius:999px; padding:8px 14px; font:inherit; font-size:13px; cursor:pointer; }
+  .chip:hover{ border-color:var(--amber); }
+  .chip[aria-pressed=true]{ background:rgba(232,163,61,.14); border-style:solid; border-color:var(--amber); font-weight:600; }
+  .chip.clear{ border-color:var(--line); color:var(--text-dim); }
+  .list{ list-style:none; display:flex; flex-direction:column; }
+  .list li{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .list .name{ flex:1; min-width:0; }
+  .list .name small{ display:block; color:var(--text-faint); font-size:12px; }
+  .list .val{ font-family:'Oswald',sans-serif; color:var(--amber); font-weight:600; white-space:nowrap; }
+  .list .rm{ border:0; background:transparent; color:var(--text-faint); font-size:18px; cursor:pointer; padding:4px 8px; }
+  .list .rm:hover{ color:#ff8a7a; }
+  .list .disc .name,.list .disc .val{ color:var(--teal); }
+  .empty{ color:var(--text-faint); padding:8px 0; border-bottom:0!important; }
+  .total{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .total .lbl{ font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint); }
+  .total .num{ font-family:'Oswald',sans-serif; font-size:34px; font-weight:700; color:var(--amber); font-variant-numeric:tabular-nums; }
+  .note{ font-size:12.5px; color:var(--text-faint); line-height:1.5; }
+  .legal{ font-size:12.5px; line-height:1.55; color:var(--text-dim); background:rgba(232,163,61,.08); border:1px solid var(--amber-dim); border-radius:8px; padding:10px 12px; }
+  .btn{ display:flex; justify-content:center; align-items:center; border-radius:8px; padding:13px 16px; font-family:'Oswald',sans-serif; font-weight:600; font-size:14px; letter-spacing:.02em; text-decoration:none; cursor:pointer; border:1px solid var(--line); background:transparent; color:var(--text); text-align:center; }
+  .btn.primary{ background:var(--amber); border-color:var(--amber); color:#14100a; }
+  .btn.primary:hover{ background:#f0b558; }
+  .btn[aria-disabled=true]{ opacity:.45; pointer-events:none; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .actions{ display:grid; gap:8px; }
+  .parte{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 12px; border-radius:8px; border:1px solid var(--line); background:#13181d; color:var(--text); font:inherit; cursor:pointer; }
+  .parte:hover{ border-color:var(--amber-dim); }
+  .parte .ck{ flex:none; width:22px; height:22px; border-radius:6px; border:2px solid var(--line); display:grid; place-items:center; font-size:14px; line-height:1; color:transparent; }
+  .parte .pn{ flex:1; min-width:0; font-weight:500; font-size:14px; }
+  .parte .pn small{ display:block; font-size:12px; font-weight:400; color:var(--text-faint); }
+  .parte .pv{ font-family:'Oswald',sans-serif; color:var(--text-dim); white-space:nowrap; }
+  .parte[aria-pressed=true]{ border-color:var(--amber); background:rgba(232,163,61,.1); }
+  .parte[aria-pressed=true] .ck{ background:var(--amber); border-color:var(--amber); color:#14100a; }
+  .parte[aria-pressed=true] .pv{ color:var(--amber); }
+  .barra{ display:none; }
+  @media(max-width:859px){ body{ padding-bottom:92px; } .barra{ position:fixed; left:0; right:0; bottom:0; display:flex; align-items:center; gap:12px; padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px)); background:var(--bg-card); border-top:1px solid var(--line); z-index:5; } .barra .bt{ flex:1; min-width:0; } .barra small{ display:block; font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint); } .barra b{ font-family:'Oswald',sans-serif; font-size:22px; color:var(--amber); } .barra .btn{ padding:11px 16px; } }
+  .toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); background:var(--text); color:var(--bg); padding:10px 16px; border-radius:999px; font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s; z-index:30; }
+  .toast.show{ opacity:1; }
+  footer{ text-align:center; padding:26px 20px 40px; color:var(--text-faint); font-size:12.5px; border-top:1px solid var(--line); }
+  footer strong{ color:var(--text-dim); }
+  @media(prefers-reduced-motion:reduce){ *{ transition:none!important; } }
+
+  .sec-title{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .sec-title span{ font-size:12px; color:var(--text-dim); }
+  .grupos{ display:flex; flex-direction:column; gap:8px; }
+  details{ background:#13181d; border:1px solid var(--line); border-radius:10px; padding:0 12px; }
+  summary{ list-style:none; display:flex; align-items:center; gap:10px; padding:13px 0; cursor:pointer; font-weight:600; font-size:14.5px; }
+  summary::-webkit-details-marker{ display:none; }
+  summary .gn{ flex:1; min-width:0; }
+  summary .gc{ font-family:'Oswald',sans-serif; font-size:12px; color:var(--text-faint); border:1px solid var(--line); border-radius:999px; padding:2px 10px; white-space:nowrap; }
+  summary .gc.on{ color:var(--amber); border-color:var(--amber-dim); }
+  summary::after{ content:""; width:8px; height:8px; border-right:2px solid var(--text-faint); border-bottom:2px solid var(--text-faint); transform:rotate(45deg); transition:transform .15s; margin:0 4px 3px 2px; }
+  details[open] summary::after{ transform:rotate(-135deg); margin-bottom:-3px; }
+  .grupo-corpo{ display:flex; flex-direction:column; gap:6px; padding-bottom:12px; }
+  .marcar{ align-self:flex-end; border:0; background:transparent; color:var(--amber); font:inherit; font-size:13px; font-weight:600; cursor:pointer; padding:4px 2px; }
+  .nada{ color:var(--text-faint); padding:6px 2px; display:none; }
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<header>
+  <a class="back" href="/peliculas.html#ppf">← Catálogo</a>
+  <div class="eyebrow">M.Scarpel Serviços Automotivos</div>
+  <h1>Monte seu kit de PPF</h1>
+  <p>Escolha o tipo do carro, use um kit pronto ou abra os grupos e toque nas peças que quer proteger. Veja o valor e envie o pacote pronto no WhatsApp.</p>
+</header>
+<main>
+<div class="grid2">
+  <section class="panel" aria-label="Montar kit">
+    <div class="field">
+      <label for="modelo">Modelo ou tipo do carro</label>
+      <input id="modelo" type="text" placeholder="Ex.: Honda City, SUV, sedan, picape" autocomplete="off">
+      <div class="hint" id="modeloHint"></div>
+    </div>
+    <div>
+      <h2 style="margin-bottom:8px">Tipo de carro</h2>
+      <div class="seg" id="seg" role="group" aria-label="Tipo de carro"></div>
+    </div>
+    <div>
+      <h2 style="margin-bottom:8px">Kits principais</h2>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div class="field">
+      <label for="busca">Procurar uma peça</label>
+      <input id="busca" type="text" placeholder="Ex.: capô, tela, soleira" autocomplete="off">
+    </div>
+    <div>
+      <div class="sec-title"><h2>Exterior</h2><span id="cExt"></span></div>
+      <div class="grupos" id="gExt"></div>
+    </div>
+    <div>
+      <div class="sec-title"><h2>Interior</h2><span id="cInt"></span></div>
+      <div class="grupos" id="gInt"></div>
+    </div>
+    <div class="nada" id="nada">Nenhuma peça encontrada. Tente outra palavra.</div>
+  </section>
+
+  <section class="panel resumo" id="resumo" aria-label="Resumo">
+    <h2>Seu pacote</h2>
+    <ul class="list" id="lista"></ul>
+    <div class="total"><span class="lbl">Total estimado</span><span class="num" id="total">R$ 0,00</span></div>
+    <p class="note">Valor estimado para o tipo de carro escolhido. O orçamento final é confirmado pela oficina depois de ver o carro.</p>
+    <div class="actions">
+      <a class="btn primary" id="wa" target="_blank" rel="noopener">Enviar pacote no WhatsApp</a>
+      <button class="btn" id="copiar" type="button">Copiar resumo</button>
+      <a class="btn" href="/kit-pelicula.html">Também quero película nos vidros</a>
+    </div>
+  </section>
+</div>
+</main>
+<footer>Dúvidas? Fale com <strong>M.Scarpel Serviços Automotivos</strong> pelo <a href="https://wa.me/5511939228558" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:none;border-bottom:1px solid var(--amber);">WhatsApp</a>.</footer>
+<div class="barra"><div class="bt"><small id="bQtd">Seu pacote</small><b id="bTotal">R$ 0,00</b></div><a class="btn primary" href="#resumo">Ver pacote</a></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+const WHATSAPP_NUMBER = '5511939228558';
+const SUPABASE_URL = "https://wpvbrutwkgzzdfovbszy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwdmJydXR3a2d6emRmb3Zic3p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMTMzNDIsImV4cCI6MjEwMzg4OTM0Mn0.TSJmpFiScpMGID9gcCJ7yc-swwTObADw2mKHSGuX0Kk";
+async function lerConfigPrecos(){
+  try {
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data, error } = await supa.from("config").select("valor").eq("chave","precos_peliculas").maybeSingle();
+    if (error || !data || !data.valor) return null;
+    return data.valor;
+  } catch (e) { console.error('[precos]', e); return null; }
+}
+(function () {
+  var CATS = [{ id: "hatch", nome: "Hatch" }, { id: "sedan", nome: "Sedan" }, { id: "suv", nome: "SUV" }, { id: "picape", nome: "Picape" }];
+  // Valores iniciais. O app Oficina Pro (aba "Preços Película" > PPF) pode substituir tudo isto: grupos, peças, valores e kits.
+  var PPF_BASE = {"grupos": [{"id": "frente", "g": "ext", "nome": "Frente"}, {"id": "laterais", "g": "ext", "nome": "Laterais"}, {"id": "traseira", "g": "ext", "nome": "Traseira"}, {"id": "tetovidros", "g": "ext", "nome": "Teto e vidros"}, {"id": "detalhes", "g": "ext", "nome": "Quinas, maçanetas e soleiras"}, {"id": "painel", "g": "int", "nome": "Painel"}, {"id": "console", "g": "int", "nome": "Console e câmbio"}, {"id": "volante", "g": "int", "nome": "Volante e comandos"}, {"id": "portasint", "g": "int", "nome": "Portas por dentro"}, {"id": "colunas", "g": "int", "nome": "Colunas, teto e porta-malas"}], "pecas": [{"id": "pcD", "gr": "frente", "nome": "Para-choque dianteiro", "p": [800, 900, 1000, 1100]}, {"id": "capo", "gr": "frente", "nome": "Capô", "p": [1200, 1300, 1500, 1600]}, {"id": "paraLamas", "gr": "frente", "nome": "Para-lamas dianteiros (par)", "p": [700, 750, 850, 900]}, {"id": "farois", "gr": "frente", "nome": "Faróis (par)", "p": [300, 300, 350, 350]}, {"id": "milha", "gr": "frente", "nome": "Faróis de milha (par)", "p": [120, 120, 150, 150]}, {"id": "grade", "gr": "frente", "nome": "Grade e moldura frontal", "p": [180, 180, 220, 250]}, {"id": "lip", "gr": "frente", "nome": "Spoiler / lip dianteiro", "p": [150, 150, 180, 200]}, {"id": "portasD", "gr": "laterais", "nome": "Portas dianteiras (par)", "p": [1000, 1100, 1300, 1300]}, {"id": "portasT", "gr": "laterais", "nome": "Portas traseiras (par)", "p": [900, 1000, 1200, 1000]}, {"id": "paraLamasT", "gr": "laterais", "nome": "Para-lamas traseiros (par)", "p": [700, 750, 850, 800]}, {"id": "retrovisores", "gr": "laterais", "nome": "Retrovisores (par)", "p": [300, 300, 350, 350]}, {"id": "colunasExt", "gr": "laterais", "nome": "Colunas A, B e C (preto piano)", "p": [350, 350, 400, 400]}, {"id": "saias", "gr": "laterais", "nome": "Saias laterais (par)", "p": [400, 400, 450, 450]}, {"id": "tampa", "gr": "traseira", "nome": "Tampa traseira", "p": [1000, 1100, 1300, 900], "nomeCat": {"hatch": "Tampa traseira", "sedan": "Porta-malas", "suv": "Tampa traseira", "picape": "Caçamba"}}, {"id": "pcT", "gr": "traseira", "nome": "Para-choque traseiro", "p": [700, 800, 900, 1000]}, {"id": "lanternas", "gr": "traseira", "nome": "Lanternas (par)", "p": [300, 300, 350, 350]}, {"id": "spoilerT", "gr": "traseira", "nome": "Spoiler / aerofólio traseiro", "p": [200, 200, 250, 150]}, {"id": "bordaMala", "gr": "traseira", "nome": "Borda do porta-malas", "p": [150, 150, 180, 180], "nomeCat": {"picape": "Borda da caçamba"}}, {"id": "teto", "gr": "tetovidros", "nome": "Teto", "p": [1100, 1200, 1500, 1400]}, {"id": "tetoSolar", "gr": "tetovidros", "nome": "Moldura do teto solar", "p": [300, 300, 400, 300]}, {"id": "faixaBrisa", "gr": "tetovidros", "nome": "Faixa do para-brisa", "p": [80, 80, 80, 80]}, {"id": "quinas", "gr": "detalhes", "nome": "Quinas de porta", "p": [200, 200, 250, 250]}, {"id": "conchas", "gr": "detalhes", "nome": "Conchas de maçaneta", "p": [150, 150, 180, 180]}, {"id": "soleiras", "gr": "detalhes", "nome": "Soleiras", "p": [250, 250, 300, 300]}, {"id": "painelInst", "gr": "painel", "nome": "Painel de instrumentos", "p": [110, 120, 150, 150]}, {"id": "tela", "gr": "painel", "nome": "Tela multimídia", "p": [130, 140, 160, 160]}, {"id": "painelAr", "gr": "painel", "nome": "Painel do ar-condicionado", "p": [110, 120, 140, 140]}, {"id": "saidasAr", "gr": "painel", "nome": "Saídas de ar (molduras)", "p": [100, 100, 120, 120]}, {"id": "portaLuvas", "gr": "painel", "nome": "Moldura do passageiro / porta-luvas", "p": [150, 150, 180, 180]}, {"id": "console", "gr": "console", "nome": "Console central e câmbio", "p": [150, 160, 200, 200]}, {"id": "apoioBraco", "gr": "console", "nome": "Apoio de braço", "p": [100, 100, 120, 120]}, {"id": "botoesVidro", "gr": "console", "nome": "Botões de vidro e travas", "p": [90, 90, 100, 100]}, {"id": "volante", "gr": "volante", "nome": "Detalhes do volante", "p": [80, 80, 100, 100]}, {"id": "alavancas", "gr": "volante", "nome": "Alavancas e coluna de direção", "p": [70, 70, 80, 80]}, {"id": "portasIntD", "gr": "portasint", "nome": "Painéis das portas dianteiras (par)", "p": [150, 150, 200, 200]}, {"id": "portasIntT", "gr": "portasint", "nome": "Painéis das portas traseiras (par)", "p": [150, 150, 200, 150]}, {"id": "macanetasInt", "gr": "portasint", "nome": "Maçanetas internas", "p": [120, 120, 140, 140]}, {"id": "soleirasInt", "gr": "portasint", "nome": "Soleiras internas (scuff)", "p": [200, 200, 240, 240]}, {"id": "colunasInt", "gr": "colunas", "nome": "Colunas internas (A, B e C)", "p": [200, 200, 250, 250]}, {"id": "lateraisMala", "gr": "colunas", "nome": "Laterais do porta-malas", "p": [200, 200, 250, 150], "nomeCat": {"picape": "Laterais da cabine traseira"}}, {"id": "bancosFundo", "gr": "colunas", "nome": "Fundo dos encostos dos bancos", "p": [150, 150, 180, 180]}], "kits": [{"id": "frontal", "nome": "Kit Frontal", "tag": "Contra pedrisco", "catalogo": true, "desc": "A frente do carro é a parte que mais recebe pedrisco e impacto de estrada. Esse kit cobre as áreas mais expostas da dianteira.", "ids": ["pcD", "capo", "paraLamas", "farois", "retrovisores"], "p": [0, 0, 0, 0]}, {"id": "essencial", "nome": "Kit Essencial", "tag": "Proteção do dia a dia", "catalogo": true, "desc": "As áreas que mais riscam no uso diário: a quina da porta ao abrir, a concha da maçaneta, a soleira ao entrar e sair e a tela da multimídia.", "ids": ["quinas", "conchas", "soleiras", "tela"], "p": [0, 0, 0, 0]}, {"id": "interno", "nome": "Kit PPF Interno", "tag": "Painel e telas", "catalogo": true, "desc": "Protege as superfícies que mais sofrem com riscos e marcas de dedo dentro do carro, mantendo o visual de novo.", "ids": ["painelInst", "tela", "painelAr", "console", "volante"], "p": [515, 550, 650, 650]}, {"id": "full", "nome": "Kit Full", "tag": "Cobertura ampla", "catalogo": true, "desc": "Para quem quer proteger o carro todo. No montador você parte do kit completo e ajusta o que quiser tirar ou acrescentar.", "ids": ["pcD", "capo", "paraLamas", "farois", "retrovisores", "portasD", "portasT", "paraLamasT", "teto", "tampa", "pcT", "lanternas", "quinas", "conchas", "soleiras"], "p": [0, 0, 0, 0]}, {"id": "quinaMacaneta", "nome": "Kit quina + maçaneta", "tag": "", "catalogo": false, "desc": "", "ids": ["quinas", "conchas"], "p": [0, 0, 0, 0]}, {"id": "quinaMacanetaSoleira", "nome": "Kit quina + maçaneta + soleira", "tag": "", "catalogo": false, "desc": "", "ids": ["quinas", "conchas", "soleiras"], "p": [500, 500, 550, 550]}]};
+  var MODELOS = {
+    hatch: ["hb20", "onix", "gol", "polo", "argo", "mobi", "kwid", "uno", "palio", "fox", "up", "march", "sandero", "ka", "fit", "celta", "corsa", "c3", "208", "207", "clio", "dolphin", "yaris", "etios", "i30", "golf", "ix20"],
+    sedan: ["city", "civic", "corolla", "virtus", "cronos", "versa", "sentra", "jetta", "logan", "prisma", "cruze", "hb20s", "voyage", "accord", "seal", "classic", "fusion", "camry", "a3", "a4", "320", "c180", "gli"],
+    suv: ["compass", "t-cross", "tcross", "creta", "tracker", "kicks", "hr-v", "hrv", "renegade", "nivus", "pulse", "fastback", "taos", "tiguan", "duster", "captur", "song", "haval", "h6", "ix35", "tucson", "crv", "cr-v", "kardian", "2008", "jaecoo", "omoda", "geely", "ex5", "wr-v", "wrv", "sw4", "pajero", "ecosport", "evoque", "territory", "commander", "xc60", "x3", "q3", "q5"],
+    picape: ["hilux", "s10", "ranger", "toro", "strada", "saveiro", "montana", "amarok", "frontier", "l200", "ram", "oroch", "maverick", "pickup", "pick-up", "caminhonete"]
+  };
+
+  var GRUPOS = [], PARTES = [], KITS = [];
+  var estado = { cat: 1, sel: {} };
+  function aplicarPpf(cfg) {
+    GRUPOS = cfg.grupos.map(function (g) { return { id: String(g.id), g: g.g === "int" ? "int" : "ext", nome: String(g.nome || "") }; });
+    var gids = GRUPOS.map(function (g) { return g.id; });
+    PARTES = cfg.pecas.filter(function (x) { return gids.indexOf(x.gr) > -1; }).map(function (x) {
+      var p = (x.p || []).map(Number); while (p.length < 4) p.push(0);
+      return { id: String(x.id), gr: x.gr, nome: String(x.nome || ""), nomeCat: x.nomeCat || null, p: p.map(function (n) { return isNaN(n) ? 0 : n; }) };
+    });
+    var pids = PARTES.map(function (x) { return x.id; });
+    KITS = cfg.kits.map(function (k) {
+      var p = (k.p || []).map(Number); while (p.length < 4) p.push(0);
+      return { id: String(k.id), nome: String(k.nome || ""), ids: (k.ids || []).filter(function (i) { return pids.indexOf(i) > -1; }), p: p.map(function (n) { return isNaN(n) ? 0 : n; }) };
+    }).filter(function (k) { return k.ids.length; });
+    Object.keys(estado.sel).forEach(function (id) { if (pids.indexOf(id) < 0) delete estado.sel[id]; });
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var BRL = function (n) { return Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); };
+  var parte = function (id) { return PARTES.filter(function (x) { return x.id === id; })[0]; };
+  var gr = function (x) { return GRUPOS.filter(function (g) { return g.id === x.gr; })[0]; };
+  var nomeParte = function (x) { return (x.nomeCat && x.nomeCat[CATS[estado.cat].id]) || x.nome; };
+  var precoParte = function (x) { return Number(x.p[estado.cat]) || 0; };
+  var semAcento = function (t) { return String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); };
+  var esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  function selecionados() { return PARTES.filter(function (x) { return estado.sel[x.id]; }); }
+  function calculo() {
+    var itens = selecionados(), subtotal = 0, descontos = [];
+    itens.forEach(function (x) { subtotal += precoParte(x); });
+    KITS.forEach(function (k) {
+      var kp = Number(k.p[estado.cat]) || 0;
+      if (kp <= 0 || !k.ids.every(function (id) { return estado.sel[id]; })) return;
+      var soma = 0; k.ids.forEach(function (id) { soma += precoParte(parte(id)); });
+      if (soma > kp) descontos.push({ nome: k.nome, valor: soma - kp });
+    });
+    var desc = descontos.reduce(function (s, d) { return s + d.valor; }, 0);
+    return { itens: itens, subtotal: subtotal, descontos: descontos, desc: desc, total: subtotal - desc };
+  }
+  function resumoTexto() {
+    var r = calculo(), modelo = $("modelo").value.trim();
+    if (!r.itens.length) return "";
+    var t = "Olá! Montei um kit de PPF no catálogo da M.Scarpel.\n";
+    t += "Carro: " + CATS[estado.cat].nome + (modelo ? " (" + modelo + ")" : "") + "\n";
+    ["ext", "int"].forEach(function (g) {
+      var lista = r.itens.filter(function (x) { return gr(x).g === g; });
+      if (!lista.length) return;
+      t += "\n" + (g === "ext" ? "Exterior" : "Interior") + ":\n";
+      lista.forEach(function (x) { t += "- " + nomeParte(x) + ": " + BRL(precoParte(x)) + "\n"; });
+    });
+    r.descontos.forEach(function (d) { t += "- Desconto " + d.nome.toLowerCase() + ": -" + BRL(d.valor) + "\n"; });
+    t += "\nTotal estimado: " + BRL(r.total) + "\nPodemos conversar sobre o orçamento?";
+    return t;
+  }
+
+  // Monta (ou remonta) grupos, peças e kits. Mantém o que já estava escolhido e os grupos abertos.
+  function montarTudo() {
+    var abertos = {};
+    document.querySelectorAll("details[data-grupo]").forEach(function (d) { if (d.open) abertos[d.getAttribute("data-grupo")] = true; });
+    $("gExt").innerHTML = ""; $("gInt").innerHTML = ""; $("presets").innerHTML = "";
+    GRUPOS.forEach(function (g) {
+      var lista = PARTES.filter(function (x) { return x.gr === g.id; });
+      if (!lista.length) return;
+      var d = document.createElement("details"); d.setAttribute("data-grupo", g.id);
+      var h = '<summary><span class="gn">' + esc(g.nome) + '</span><span class="gc" data-cont="' + esc(g.id) + '"></span></summary><div class="grupo-corpo">';
+      lista.forEach(function (x) {
+        h += '<button type="button" class="parte" data-parte="' + esc(x.id) + '" aria-pressed="false"><span class="ck" aria-hidden="true">✓</span><span class="pn"></span><span class="pv"></span></button>';
+      });
+      h += '<button type="button" class="marcar" data-marcar="' + esc(g.id) + '"></button></div>';
+      d.innerHTML = h; if (abertos[g.id]) d.open = true;
+      $(g.g === "ext" ? "gExt" : "gInt").appendChild(d);
+    });
+    KITS.forEach(function (k, i) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = k.nome; b.setAttribute("data-pacote", i);
+      b.addEventListener("click", function () {
+        var todos = k.ids.every(function (id) { return estado.sel[id]; });
+        k.ids.forEach(function (id) { estado.sel[id] = !todos; });
+        atualizar();
+      });
+      $("presets").appendChild(b);
+    });
+    var limpar = document.createElement("button"); limpar.type = "button"; limpar.className = "chip clear"; limpar.textContent = "Limpar tudo";
+    limpar.addEventListener("click", function () { estado.sel = {}; atualizar(); });
+    $("presets").appendChild(limpar);
+    atualizar();
+    aplicarBusca();
+  }
+  function atualizar() {
+    var r = calculo(), li = "";
+    r.itens.forEach(function (x) {
+      li += '<li><span class="name">' + esc(nomeParte(x)) + '</span><span class="val">' + BRL(precoParte(x)) + '</span><button class="rm" type="button" data-rm="' + esc(x.id) + '" aria-label="Remover ' + esc(nomeParte(x)) + '">×</button></li>';
+    });
+    r.descontos.forEach(function (d) { li += '<li class="disc"><span class="name">Desconto: ' + esc(d.nome) + '</span><span class="val">-' + BRL(d.valor) + "</span></li>"; });
+    $("lista").innerHTML = li || '<li class="empty">Nenhuma peça escolhida ainda. Use um kit pronto ou abra os grupos.</li>';
+    $("total").textContent = BRL(r.total); $("bTotal").textContent = BRL(r.total);
+    $("bQtd").textContent = r.itens.length ? r.itens.length + (r.itens.length === 1 ? " peça" : " peças") : "Seu pacote";
+    $("wa").href = "https://wa.me/" + WHATSAPP_NUMBER + "?text=" + encodeURIComponent(resumoTexto() || "Olá! Gostaria de um orçamento de PPF.");
+    document.querySelectorAll(".parte").forEach(function (b) {
+      var x = parte(b.getAttribute("data-parte")); if (!x) return;
+      b.setAttribute("aria-pressed", String(!!estado.sel[x.id]));
+      b.querySelector(".pn").textContent = nomeParte(x);
+      b.querySelector(".pv").textContent = BRL(precoParte(x));
+    });
+    var tot = { ext: 0, int: 0 };
+    GRUPOS.forEach(function (g) {
+      var c = document.querySelector('[data-cont="' + g.id + '"]'); if (!c) return;
+      var ids = PARTES.filter(function (x) { return x.gr === g.id; }), n = ids.filter(function (x) { return estado.sel[x.id]; }).length;
+      c.textContent = n + " de " + ids.length; c.classList.toggle("on", n > 0);
+      document.querySelector('[data-marcar="' + g.id + '"]').textContent = n === ids.length ? "Desmarcar o grupo todo" : "Marcar o grupo todo";
+      tot[g.g] += n;
+    });
+    $("cExt").textContent = tot.ext ? tot.ext + " escolhidas" : ""; $("cInt").textContent = tot.int ? tot.int + " escolhidas" : "";
+    KITS.forEach(function (k, i) {
+      var b = document.querySelector('[data-pacote="' + i + '"]');
+      if (b) b.setAttribute("aria-pressed", String(k.ids.every(function (id) { return estado.sel[id]; })));
+    });
+    document.querySelectorAll("#seg button").forEach(function (b, i) { b.setAttribute("aria-pressed", String(i === estado.cat)); });
+  }
+  function toast(m) { var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(function () { t.classList.remove("show"); }, 1800); }
+
+  CATS.forEach(function (c, i) {
+    var b = document.createElement("button"); b.type = "button"; b.textContent = c.nome;
+    b.addEventListener("click", function () { estado.cat = i; atualizar(); });
+    $("seg").appendChild(b);
+  });
+  document.querySelector(".panel").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-parte]");
+    if (b) { var id = b.getAttribute("data-parte"); estado.sel[id] = !estado.sel[id]; atualizar(); return; }
+    var m = e.target.closest("[data-marcar]");
+    if (m) {
+      var ids = PARTES.filter(function (x) { return x.gr === m.getAttribute("data-marcar"); }).map(function (x) { return x.id; });
+      var todos = ids.every(function (id) { return estado.sel[id]; });
+      ids.forEach(function (id) { estado.sel[id] = !todos; }); atualizar();
+    }
+  });
+  $("lista").addEventListener("click", function (e) { var b = e.target.closest("[data-rm]"); if (b) { estado.sel[b.getAttribute("data-rm")] = false; atualizar(); } });
+
+  function aplicarBusca() {
+    var q = semAcento($("busca").value.trim()), achou = false;
+    GRUPOS.forEach(function (g) {
+      var d = document.querySelector('[data-grupo="' + g.id + '"]'); if (!d) return;
+      var alguma = false;
+      PARTES.filter(function (x) { return x.gr === g.id; }).forEach(function (x) {
+        var ok = !q || semAcento(nomeParte(x) + " " + g.nome).indexOf(q) > -1;
+        document.querySelector('[data-parte="' + x.id + '"]').style.display = ok ? "" : "none";
+        if (ok) alguma = true;
+      });
+      d.style.display = alguma ? "" : "none"; if (q && alguma) d.open = true; if (alguma) achou = true;
+    });
+    $("nada").style.display = q && !achou ? "block" : "none";
+  }
+  $("busca").addEventListener("input", aplicarBusca);
+
+  function detectar(texto) {
+    var t = " " + texto.toLowerCase().replace(/[^a-z0-9\-çãáéíóú ]/g, " ") + " ";
+    if (/\b(suv|utilitario|utilitário)\b/.test(t)) return 2;
+    if (/\b(sedan|sedã)\b/.test(t)) return 1;
+    if (/\b(hatch|compacto)\b/.test(t)) return 0;
+    if (/\b(picape|pickup|pick-up|caminhonete)\b/.test(t)) return 3;
+    var ordem = [1, 3, 2, 0];
+    for (var k = 0; k < ordem.length; k++) {
+      var lista = MODELOS[CATS[ordem[k]].id];
+      for (var j = 0; j < lista.length; j++) { if (t.indexOf(" " + lista[j] + " ") > -1) return ordem[k]; }
+    }
+    return -1;
+  }
+  $("modelo").addEventListener("input", function () {
+    var i = detectar(this.value);
+    if (i > -1) { estado.cat = i; $("modeloHint").textContent = "Reconhecido como " + CATS[i].nome + ". Você pode trocar nos botões."; }
+    else $("modeloHint").textContent = this.value.trim() ? "Não reconheci o modelo. Escolha o tipo nos botões." : "";
+    atualizar();
+  });
+  $("copiar").addEventListener("click", function () {
+    var t = resumoTexto(); if (!t) return;
+    function plano() {
+      var ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta); toast(ok ? "Resumo copiado" : "Não deu para copiar");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast("Resumo copiado"); }, plano); else plano();
+  });
+
+  // kit vindo do catálogo: ?kit=<id do kit>
+  function preSelecionar() {
+    try {
+      var kq = new URLSearchParams(location.search).get("kit");
+      var k = KITS.filter(function (x) { return x.id === kq; })[0];
+      if (k) {
+        k.ids.forEach(function (id) { estado.sel[id] = true; });
+        GRUPOS.forEach(function (g) { if (PARTES.some(function (x) { return x.gr === g.id && estado.sel[x.id]; })) { var d = document.querySelector('[data-grupo="' + g.id + '"]'); if (d) d.open = true; } });
+      }
+    } catch (e) {}
+    if (!document.querySelector("details[open]")) { var d0 = document.querySelector("details[data-grupo]"); if (d0) d0.open = true; }
+    atualizar();
+  }
+
+  aplicarPpf(PPF_BASE); montarTudo(); preSelecionar();
+
+  // Preços e itens vindos do app Oficina Pro (aba "Preços Película"). Sem isso, valem os valores iniciais acima.
+  lerConfigPrecos().then(function (p) {
+    if (!p || !p.ppf || !Array.isArray(p.ppf.grupos) || !Array.isArray(p.ppf.pecas) || !Array.isArray(p.ppf.kits) || !p.ppf.pecas.length) return;
+    aplicarPpf(p.ppf); montarTudo(); preSelecionar();
+  });
+})();
+</script>
+</body>
+</html>
