@@ -84,7 +84,27 @@
   .linha[aria-pressed=true]{ border-color:var(--amber); background:rgba(232,163,61,.1); box-shadow:inset 0 0 0 1px var(--amber); }
   .sim-stage{ position:relative; border-radius:10px; overflow:hidden; background:#0b0e12; }
   .sim-stage img{ display:block; width:100%; height:auto; }
-  .sim-glass{ position:absolute; inset:0; opacity:var(--tint-op,0); transition:opacity .35s ease; pointer-events:none; }
+  .sim-glass{ position:absolute; inset:0; opacity:0; transition:opacity .35s ease; pointer-events:none; }
+  .sim-glass.d{ opacity:var(--op-d,0); } .sim-glass.t{ opacity:var(--op-t,0); }
+  .sim-stage.esp img{ transform:scaleX(-1); }
+  .lados{ display:flex; gap:8px; margin-top:10px; }
+  .lados button{ flex:1; padding:8px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-dim); font:inherit; font-size:13px; cursor:pointer; }
+  .lados button[aria-pressed=true]{ border-color:var(--amber); color:var(--text); background:rgba(232,163,61,.1); }
+  .vg{ display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#13181d; }
+  .vgh{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .vgh b{ font-family:'Oswald',sans-serif; font-weight:500; font-size:15px; letter-spacing:.02em; }
+  .vgh .lnk{ background:none; border:0; color:var(--amber); font:inherit; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--amber-dim); padding:0 0 1px; }
+  .vlado{ display:flex; flex-direction:column; gap:6px; }
+  .vlado > span{ font-size:12px; color:var(--text-faint); }
+  .tchips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .tchip{ font-family:'Oswald',sans-serif; font-size:13.5px; letter-spacing:.03em; padding:8px 13px; min-height:38px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-dim); cursor:pointer; }
+  .tchip:hover{ border-color:var(--amber-dim); color:var(--text); }
+  .tchip[aria-pressed=true]{ background:var(--amber); border-color:var(--amber); color:#14100a; font-weight:600; }
+  .tchip.sem[aria-pressed=true]{ background:#2a3138; border-color:var(--text-faint); color:var(--text); }
+  .todos{ display:flex; flex-direction:column; gap:6px; padding:12px; border:1px dashed var(--amber-dim); border-radius:10px; }
+  .todos > span{ font-size:12.5px; color:var(--text-dim); }
+  details.tons summary{ cursor:pointer; font-size:13px; color:var(--text-dim); }
+  details.tons p{ font-size:13px; color:var(--text-dim); line-height:1.5; margin-top:6px; }
   .tint-btns{ display:flex; gap:8px; flex-wrap:wrap; }
   .tint-btn{ font-family:'Oswald',sans-serif; font-size:14px; letter-spacing:.04em; padding:9px 18px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-dim); cursor:pointer; }
   .tint-btn:hover{ border-color:var(--amber-dim); color:var(--text); }
@@ -123,13 +143,17 @@
       <div class="linhas" id="linhas"></div>
     </div>
     <div>
-      <h2 style="margin-bottom:10px">2. Tonalidade dos vidros traseiros</h2>
+      <h2 style="margin-bottom:6px">2. Tonalidade de cada vidro</h2>
+      <p class="note" style="margin-bottom:12px">Toque no tom que você quer em cada vidro. Pode ser diferente de um vidro para o outro.</p>
       <div class="sim-stage" id="simStage">
         <img src="/carro-pelicula.jpg" width="1400" height="529" decoding="async" alt="Carro de perfil usado para visualizar a tonalidade da película">
-        <img class="sim-glass" src="/carro-pelicula-vidros.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
+        <img class="sim-glass d" src="/carro-pelicula-vidros-diant.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
+        <img class="sim-glass t" src="/carro-pelicula-vidros-tras.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
       </div>
-      <div class="tint-btns" id="tintBtns" style="margin-top:12px" role="group" aria-label="Tonalidade"></div>
-      <div class="sim-caption" id="simCaption" style="margin-top:10px"></div>
+      <div class="lados" id="lados" role="group" aria-label="Lado do carro na imagem"><button type="button" data-lado="E" aria-pressed="true">Ver lado esquerdo</button><button type="button" data-lado="D" aria-pressed="false">Ver lado direito</button></div>
+      <p class="note" style="margin-top:8px">A imagem mostra as portas. O para-brisa e o vigia entram no kit, mas não aparecem nesta foto.</p>
+      <div id="vidros" style="display:flex;flex-direction:column;gap:10px;margin-top:12px"></div>
+      <details class="tons" style="margin-top:12px"><summary>O que significa cada tom</summary><div id="simCaption"></div></details>
       <div class="legal" style="margin-top:12px">⚖ <strong>Resolução CONTRAN 989/2022:</strong> o para-brisa e os vidros laterais dianteiros precisam manter, no mínimo, <strong>70% de transparência</strong> (vidro + película somados). Os vidros traseiros e o vigia não têm percentual mínimo, desde que o carro tenha retrovisores externos nos dois lados. Películas espelhadas ou refletivas são proibidas em qualquer vidro.</div>
     </div>
     <div>
@@ -166,11 +190,20 @@ const LINHAS = [
 ];
 let REMOCAO = 100;
 const TONS = [
-  { id:'g35', label:'G35', op:0.55, txt:'<b>G35</b> — intermediária: escurece o visual sem tirar muita claridade de dentro.' },
-  { id:'g20', label:'G20', op:0.75, txt:'<b>G20</b> — escura: boa privacidade e visual bem mais fechado.' },
-  { id:'g5',  label:'G5',  op:0.92, txt:'<b>G5</b> — bem escura: privacidade máxima, quase não se enxerga o interior.' }
+  { id:'lei', label:'Lei (70%)', curto:'Lei 70%', op:0.10, txt:'<b>Lei (70%)</b> — o nível mínimo de transparência exigido pela Resolução CONTRAN 989/2022 nos vidros dianteiros.' },
+  { id:'g35', label:'G35', curto:'G35', op:0.55, txt:'<b>G35</b> — intermediária: escurece o visual sem tirar muita claridade de dentro.' },
+  { id:'g20', label:'G20', curto:'G20', op:0.75, txt:'<b>G20</b> — escura: boa privacidade e visual bem mais fechado.' },
+  { id:'g5',  label:'G5',  curto:'G5',  op:0.92, txt:'<b>G5</b> — bem escura: privacidade máxima, quase não se enxerga o interior.' }
 ];
-const estado = { linha:1, linhaId:'nano-carbono', tom:'g20', base:true, brisa:false, remocao:false, ps8:false, extras:{} };
+const tomDe = id => TONS.find(x => x.id === id) || TONS[2];
+const GRUPOS_VIDRO = [
+  { id:'brisa', nome:'Para-brisa', keys:['brisa'], sem:true },
+  { id:'dian', nome:'Portas dianteiras', keys:['dE','dD'], lados:true },
+  { id:'tras', nome:'Portas traseiras', keys:['tE','tD'], lados:true },
+  { id:'vigia', nome:'Vigia (vidro de trás)', keys:['vigia'] }
+];
+let ladoPrev = 'E';
+const estado = { linha:1, linhaId:'nano-carbono', v:{ brisa:'lei', dE:'lei', dD:'lei', tE:'g20', tD:'g20', vigia:'g20' }, sep:{ dian:false, tras:false }, base:true, brisa:false, remocao:false, ps8:false, extras:{} };
 // Kit combinado (película + PPF): guardado no navegador do cliente por 6 horas, compartilhado com a página de PPF.
 const KIT_KEY = 'ms-kit-v1', KIT_TTL = 6*3600*1000;
 function lerKit(){ try { const k = JSON.parse(localStorage.getItem(KIT_KEY) || 'null'); if (!k || !k.t || Date.now() - k.t > KIT_TTL) return {}; return k; } catch (e) { return {}; } }
@@ -182,10 +215,14 @@ const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const $ = id => document.getElementById(id);
 const BRL = n => Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 
+function partesVidros(){
+  const v = estado.v, par = (e, d) => e === d ? tomDe(e).curto : 'esq. ' + tomDe(e).curto + ' / dir. ' + tomDe(d).curto;
+  return [['Portas dianteiras', par(v.dE, v.dD)], ['Portas traseiras', par(v.tE, v.tD)], ['Vigia (vidro de trás)', tomDe(v.vigia).curto]];
+}
 function itens(){
-  const l = LINHAS[estado.linha], t = TONS.find(x=>x.id===estado.tom), r = [];
-  if (estado.base) r.push({ nome:'Laterais e traseiro', det:l.nome + ' · ' + t.label, valor:l.lat, id:'base' });
-  if (estado.brisa) r.push({ nome:'Para-brisa', det:l.nome, valor:l.brisa, id:'brisa' });
+  const l = LINHAS[estado.linha], r = [];
+  if (estado.base) r.push({ nome:'Laterais e traseiro', det:l.nome + ' · ' + partesVidros().map(x => x[0].replace('Portas ','').replace(' (vidro de trás)','') + ' ' + x[1]).join(' · '), valor:l.lat, id:'base' });
+  if (estado.brisa) r.push({ nome:'Para-brisa', det:l.nome + ' · ' + tomDe(estado.v.brisa).curto, valor:l.brisa, id:'brisa' });
   if (estado.remocao) r.push({ nome:'Remoção da película antiga', det:'Inclui limpeza profunda dos vidros', valor:REMOCAO, id:'remocao' });
   if (estado.ps8) r.push({ nome:'Antivandalismo PS8', det:'Valor combinado à parte', valor:0, id:'ps8' });
   EXTRAS_PEL.forEach(x => { if (estado.extras[x.id]) r.push({ nome:x.nome, det:x.det || '', valor:x.valor, id:'x:' + x.id }); });
@@ -193,10 +230,15 @@ function itens(){
 }
 function total(){ return itens().reduce((s,i)=>s+i.valor,0); }
 function secaoTexto(){
-  const l = LINHAS[estado.linha], t = TONS.find(x=>x.id===estado.tom), it = itens();
+  const l = LINHAS[estado.linha], it = itens();
   if (!it.length) return '';
   let m = 'PELÍCULA\n';
-  if (estado.base) m += 'Linha: ' + l.nome + '\nTonalidade dos vidros traseiros: ' + t.label + '\nDianteiros e para-brisa: nível permitido por lei\n';
+  if (estado.base || estado.brisa) {
+    m += 'Linha: ' + l.nome + '\nTonalidade por vidro:\n';
+    if (estado.brisa) m += '- Para-brisa: ' + tomDe(estado.v.brisa).curto + '\n';
+    if (estado.base) partesVidros().forEach(x => { m += '- ' + x[0] + ': ' + x[1] + '\n'; });
+    m += '\n';
+  }
   it.forEach(i => { m += '- ' + i.nome + (i.valor ? ': ' + BRL(i.valor) : ' (a combinar)') + '\n'; });
   return m;
 }
@@ -234,23 +276,68 @@ function atualizar(){
     const l = LINHAS[i]; b.setAttribute('aria-pressed', String(estado.base && i===estado.linha));
     b.querySelector('.lp').textContent = 'Laterais e traseiro: ' + BRL(l.lat);
   });
-  const t = TONS.find(x=>x.id===estado.tom);
-  $('simStage').style.setProperty('--tint-op', t.op); $('simCaption').innerHTML = t.txt;
-  document.querySelectorAll('.tint-btn').forEach(b => b.classList.toggle('active', b.dataset.id===estado.tom));
+  renderVidros();
   const l = LINHAS[estado.linha];
   $('extras').innerHTML = `
-    <button type="button" class="parte" data-ex="brisa" aria-pressed="${estado.brisa}"><span class="ck">✓</span><span class="pn">Para-brisa<small>Película no vidro todo, no nível permitido por lei</small></span><span class="pv">${BRL(l.brisa)}</span></button>
+    <button type="button" class="parte" data-ex="brisa" aria-pressed="${estado.brisa}"><span class="ck">✓</span><span class="pn">Para-brisa<small>Película no vidro todo. Escolha o tom na seção 2</small></span><span class="pv">${BRL(l.brisa)}</span></button>
     <button type="button" class="parte" data-ex="remocao" aria-pressed="${estado.remocao}"><span class="ck">✓</span><span class="pn">Remoção da película antiga<small>Se o carro já tem película instalada</small></span><span class="pv">${BRL(REMOCAO)}</span></button>
     <button type="button" class="parte" data-ex="ps8" aria-pressed="${estado.ps8}"><span class="ck">✓</span><span class="pn">Antivandalismo PS8<small>Proteção extra contra impacto e arrombamento — valor combinado</small></span><span class="pv">a combinar</span></button>` +
     EXTRAS_PEL.map(x => `<button type="button" class="parte" data-ex="x:${esc(x.id)}" aria-pressed="${!!estado.extras[x.id]}"><span class="ck">✓</span><span class="pn">${esc(x.nome)}${x.det ? '<small>' + esc(x.det) + '</small>' : ''}</span><span class="pv">${BRL(x.valor)}</span></button>`).join('');
+}
+function chipsHtml(atual, attr, valor, comSem){
+  let h = '<div class="tchips">';
+  if (comSem) h += `<button type="button" class="tchip sem" ${attr}="${valor}" data-t="sem" aria-pressed="${atual === 'sem'}">Sem película</button>`;
+  TONS.forEach(t => { h += `<button type="button" class="tchip" ${attr}="${valor}" data-t="${t.id}" aria-pressed="${atual === t.id}">${t.label}</button>`; });
+  return h + '</div>';
+}
+function separado(g){ return !!estado.sep[g.id] || estado.v[g.keys[0]] !== estado.v[g.keys[1]]; }
+function renderVidros(){
+  const v = estado.v;
+  let h = '<div class="todos"><span>Mesmo tom em todas as portas e no vigia:</span>' + chipsHtml('', 'data-todos', '1', false) + '</div>';
+  GRUPOS_VIDRO.forEach(g => {
+    const sep = g.lados && separado(g);
+    h += `<div class="vg"><div class="vgh"><b>${g.nome}</b>${g.lados ? `<button type="button" class="lnk" data-sep="${g.id}">${sep ? 'Mesmo tom nos dois lados' : 'Separar esquerda / direita'}</button>` : ''}</div>`;
+    if (sep) {
+      h += `<div class="vlado"><span>Lado esquerdo</span>${chipsHtml(v[g.keys[0]], 'data-k', g.keys[0], false)}</div><div class="vlado"><span>Lado direito</span>${chipsHtml(v[g.keys[1]], 'data-k', g.keys[1], false)}</div>`;
+    } else if (g.sem) {
+      h += chipsHtml(estado.brisa ? v.brisa : 'sem', 'data-k', 'brisa', true);
+    } else {
+      h += chipsHtml(v[g.keys[0]], 'data-g', g.id, false);
+    }
+    h += '</div>';
+  });
+  $('vidros').innerHTML = h;
+  const sd = $('simStage');
+  sd.classList.toggle('esp', ladoPrev === 'D');
+  sd.style.setProperty('--op-d', tomDe(v[ladoPrev === 'E' ? 'dE' : 'dD']).op);
+  sd.style.setProperty('--op-t', tomDe(v[ladoPrev === 'E' ? 'tE' : 'tD']).op);
+  document.querySelectorAll('#lados button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lado === ladoPrev)));
+  $('simCaption').innerHTML = TONS.map(t => '<p>' + t.txt + '</p>').join('');
 }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('show'),1800); }
 
 function renderLinhas(){ $('linhas').innerHTML = LINHAS.map((l,i) => `<button type="button" class="linha" data-i="${i}" aria-pressed="false"><b>${esc(l.nome)}</b><span class="g">${esc(l.garantia || '')}</span><span class="d">${esc(l.desc || '')}</span><span class="lp"></span></button>`).join(''); }
 renderLinhas();
 $('linhas').addEventListener('click', e => { const b = e.target.closest('.linha'); if (b){ estado.linha = Number(b.dataset.i); estado.linhaId = LINHAS[estado.linha].id; estado.base = true; atualizar(); } });
-$('tintBtns').innerHTML = TONS.map(t => `<button class="tint-btn" type="button" data-id="${t.id}">${t.label}</button>`).join('');
-$('tintBtns').addEventListener('click', e => { const b = e.target.closest('.tint-btn'); if (b){ estado.tom = b.dataset.id; estado.base = true; atualizar(); } });
+$('lados').addEventListener('click', e => { const b = e.target.closest('[data-lado]'); if (b){ ladoPrev = b.dataset.lado; atualizar(); } });
+$('vidros').addEventListener('click', e => {
+  const s = e.target.closest('[data-sep]');
+  if (s) {
+    const g = GRUPOS_VIDRO.find(x => x.id === s.dataset.sep);
+    if (separado(g)) { estado.v[g.keys[1]] = estado.v[g.keys[0]]; estado.sep[g.id] = false; } else estado.sep[g.id] = true;
+    atualizar(); return;
+  }
+  const c = e.target.closest('.tchip'); if (!c) return;
+  const t = c.dataset.t;
+  if (c.hasAttribute('data-todos')) { ['dE','dD','tE','tD','vigia'].forEach(k => { estado.v[k] = t; }); estado.sep = { dian:false, tras:false }; estado.base = true; }
+  else if (c.hasAttribute('data-g')) { GRUPOS_VIDRO.find(x => x.id === c.dataset.g).keys.forEach(k => { estado.v[k] = t; }); estado.base = true; }
+  else {
+    const k = c.dataset.k;
+    if (k === 'brisa') { if (t === 'sem') estado.brisa = false; else { estado.brisa = true; estado.v.brisa = t; } }
+    else { estado.v[k] = t; estado.base = true; }
+  }
+  atualizar();
+});
 $('extras').addEventListener('click', e => { const b = e.target.closest('[data-ex]'); if (!b) return; const k = b.dataset.ex; if (k.startsWith('x:')) estado.extras[k.slice(2)] = !estado.extras[k.slice(2)]; else estado[k] = !estado[k]; atualizar(); });
 $('lista').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; const k = b.dataset.rm; if (k.startsWith('x:')) estado.extras[k.slice(2)] = false; else estado[k] = false; atualizar(); });
 $('modelo').addEventListener('input', atualizar);
@@ -267,7 +354,10 @@ function resolverLinha(){ const i = LINHAS.findIndex(l => l.id === estado.linhaI
 (function(){
   const kit = lerKit(), s = kit.pel && kit.pel.estado;
   if (s && typeof s === 'object') {
-    if (TONS.some(t => t.id === s.tom)) estado.tom = s.tom;
+    const ok = id => TONS.some(t => t.id === id);
+    if (s.v && typeof s.v === 'object') Object.keys(estado.v).forEach(k => { if (ok(s.v[k])) estado.v[k] = s.v[k]; });
+    else if (ok(s.tom)) ['dD','dE','tE','tD','vigia'].forEach(k => { estado.v[k] = s.tom; }); // formato antigo
+    if (s.sep && typeof s.sep === 'object') { estado.sep.dian = !!s.sep.dian; estado.sep.tras = !!s.sep.tras; }
     if (typeof s.linhaId === 'string') estado.linhaId = s.linhaId;
     ['base','brisa','remocao','ps8'].forEach(k => { if (typeof s[k] === 'boolean') estado[k] = s[k]; });
     if (s.extras && typeof s.extras === 'object') Object.keys(s.extras).forEach(k => { estado.extras[k] = !!s.extras[k]; });
