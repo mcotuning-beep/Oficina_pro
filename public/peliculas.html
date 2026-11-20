@@ -126,6 +126,26 @@
   .price-hint{ font-family:'Oswald',sans-serif; color:var(--amber); font-size:13px; }
   .removal-note{ margin-top:22px; text-align:center; font-size:12.5px; color:var(--text-faint); padding:12px; border-top:1px dashed var(--line); }
   .kit-cta{ margin-top:24px; }
+  .nav{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; padding:5px; border:1px solid var(--line); border-radius:12px; background:var(--bg-card); margin-bottom:30px; }
+  .nav a{ font-family:'Oswald',sans-serif; font-size:14px; letter-spacing:.04em; padding:11px 4px; border-radius:8px; text-align:center; text-decoration:none; color:var(--text-dim); }
+  .nav a:hover{ color:var(--text); background:rgba(255,255,255,.04); }
+  .nav a.go{ background:var(--amber); color:#14100a; font-weight:600; }
+  .bloco{ scroll-margin-top:16px; margin-bottom:44px; }
+  .bloco-head{ margin-bottom:22px; }
+  .bloco-head .k{ font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--amber); }
+  .bloco-head h2{ font-family:'Oswald',sans-serif; font-size:clamp(24px,5vw,32px); font-weight:700; margin:4px 0 10px; letter-spacing:0; text-transform:none; color:var(--text); }
+  .bloco-head p{ color:var(--text-dim); font-size:15px; line-height:1.6; max-width:62ch; }
+  .modelos{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .modelos span{ border:1px solid var(--amber-dim); border-radius:999px; padding:6px 13px; font-size:13px; color:var(--text); background:rgba(232,163,61,.07); }
+  .benef{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:28px; }
+  @media(max-width:560px){ .benef{ grid-template-columns:minmax(0,1fr); } }
+  .benef div{ border:1px solid var(--line); background:var(--bg-card); border-radius:10px; padding:16px; }
+  .benef b{ display:block; font-family:'Oswald',sans-serif; font-size:16px; font-weight:600; color:var(--teal); margin-bottom:4px; }
+  .benef span{ font-size:13.5px; color:var(--text-dim); line-height:1.5; }
+  .final{ border:1px solid var(--amber-dim); border-radius:14px; padding:22px 18px; background:rgba(232,163,61,.05); }
+  .final h2{ font-family:'Oswald',sans-serif; font-size:clamp(22px,5vw,28px); font-weight:700; text-align:center; margin-bottom:6px; letter-spacing:0; text-transform:none; color:var(--text); }
+  .final > p{ text-align:center; color:var(--text-dim); font-size:14px; margin-bottom:18px; }
+  .final .cta-row{ margin-bottom:0; }
   .overlay{ position:fixed; inset:0; background:rgba(6,8,10,.72); backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center; z-index:20; opacity:0; pointer-events:none; transition:opacity .22s ease; }
   .overlay.open{ opacity:1; pointer-events:all; }
   @media(min-width:640px){ .overlay{ align-items:center; } }
@@ -154,32 +174,24 @@
 <header>
   <div class="eyebrow">M.Scarpel Serviços Automotivos</div>
   <h1>Catálogo M.Scarpel</h1>
-  <p>Películas para os vidros e PPF para proteger a pintura. Escolha, monte seu kit e envie pronto pelo WhatsApp.</p>
+  <p>Conheça as películas para os vidros e o PPF, a proteção da pintura. Depois é só montar o seu kit e enviar pronto pelo WhatsApp.</p>
 </header>
 
 <main>
-  <div class="cta-row">
-    <a class="cta" href="/kit-pelicula.html">
-      <span class="k">Insulfilm</span>
-      <b>Monte seu kit de película</b>
-      <span class="d">Escolha a linha, a tonalidade e os vidros. Veja o valor na hora.</span>
-      <span class="go">Montar kit →</span>
-    </a>
-    <a class="cta" href="/kit-ppf.html">
-      <span class="k">PPF</span>
-      <b>Monte seu kit de PPF</b>
-      <span class="d">Toque nas peças do carro que quer proteger e veja o valor do pacote.</span>
-      <span class="go">Montar kit →</span>
-    </a>
-  </div>
-
-  <div class="tabs" role="tablist" aria-label="Tipo de produto">
-    <button class="tab" role="tab" id="tabPel" aria-selected="true" aria-controls="painelPel" data-tab="pel">Películas de vidro</button>
-    <button class="tab" role="tab" id="tabPpf" aria-selected="false" aria-controls="painelPpf" data-tab="ppf">PPF · Proteção de pintura</button>
-  </div>
+  <nav class="nav" aria-label="Seções do catálogo">
+    <a href="#pelicula">Películas</a>
+    <a href="#ppf">PPF</a>
+    <a href="#monte" class="go">Montar kit</a>
+  </nav>
 
   <!-- ───────── Películas de vidro ───────── -->
-  <section id="painelPel" role="tabpanel" aria-labelledby="tabPel">
+  <section id="pelicula" class="bloco">
+    <div class="bloco-head">
+      <div class="k">Insulfilm</div>
+      <h2>Películas para os vidros</h2>
+      <p>A película de vidro não é uma só: trabalhamos com mais de um modelo, cada um com um perfil de conforto, durabilidade e proteção. Conheça as nossas quatro opções e veja os detalhes de cada uma.</p>
+      <div class="modelos"><span>Linha Profissional</span><span>Linha Nano Carbono</span><span>Linha Nano Cerâmica</span><span>Antivandalismo PS8</span></div>
+    </div>
     <div class="info-stack">
       <div class="info-item" data-item>
         <button class="info-toggle" data-toggle>
@@ -194,7 +206,7 @@
             <span class="vlt-chip"><b>G35</b> · intermediária</span>
             <span class="vlt-chip"><b>G50</b> · clara</span>
           </div>
-          Nas nossas linhas abaixo, cuidamos de indicar o nível ideal pra cada vidro do seu carro dentro do que a lei permite — você não precisa decorar esses códigos, é só escolher a linha.
+          Não precisa decorar esses códigos: na hora de montar o seu kit, você escolhe o tom de cada vidro com um toque, e a gente confirma tudo com você antes de aplicar.
         </div></div>
       </div>
       <div class="info-item" data-item>
@@ -228,24 +240,28 @@
     <div class="grid" id="grid"></div>
 
     <div class="removal-note">
-      Se o carro já tem película instalada, cobramos <strong id="removalPrice" style="color:var(--text-dim)">R$ 100,00</strong> pela remoção do material antigo e limpeza profunda dos vidros antes da nova aplicação.
+      Se o carro já tem película instalada, fazemos a remoção do material antigo e a limpeza profunda dos vidros antes da nova aplicação.
     </div>
     <a class="btn primary kit-cta" href="/kit-pelicula.html">Monte seu kit de película</a>
   </section>
 
   <!-- ───────── PPF ───────── -->
-  <section id="painelPpf" role="tabpanel" aria-labelledby="tabPpf" hidden>
+<section id="ppf" class="bloco">
+    <div class="bloco-head">
+      <div class="k">PPF</div>
+      <h2>PPF: película de proteção de pintura</h2>
+      <p>O PPF (Paint Protection Film) é uma película transparente aplicada direto sobre a pintura do carro. Ela cria uma camada de proteção sobre a lataria e as peças mais expostas, sem mudar a cor nem o visual original.</p>
+    </div>
+
+    <div class="section-label">Principais benefícios</div>
+    <div class="benef">
+      <div><b>Proteção contra raios UV</b><span>Ajuda a preservar a cor e o brilho da pintura contra o desgaste do sol.</span></div>
+      <div><b>Contra pedrisco e riscos finos</b><span>Absorve os pequenos impactos e o desgaste do dia a dia nas áreas mais expostas.</span></div>
+      <div><b>Pintura original preservada</b><span>Mantém a pintura de fábrica protegida e o carro mais bonito por mais tempo.</span></div>
+      <div><b>Transparente e discreto</b><span>Não muda o visual do carro. A proteção fica por baixo dos olhos de quem vê.</span></div>
+    </div>
+
     <div class="info-stack">
-      <div class="info-item open" data-item>
-        <button class="info-toggle" data-toggle>
-          <span><span class="icon">PPF</span> &nbsp;O que é e o que protege</span>
-          <span class="chevron">▾</span>
-        </button>
-        <div class="info-body"><div class="info-body-inner">
-          O PPF (Paint Protection Film) é uma <strong>película transparente aplicada direto sobre a pintura</strong> do carro. Ele protege contra <strong>pedrisco, riscos finos e o desgaste do dia a dia</strong> nas áreas mais expostas, mantendo a pintura original e a estética do carro.
-          <br><br>Trabalhamos em <strong>kits</strong>, de acordo com o que você quer proteger. Como cada carro tem uma área diferente, o valor mostrado no montador é uma <strong>estimativa por tipo de carro</strong>, e o orçamento final é confirmado depois que a gente avalia o veículo.
-        </div></div>
-      </div>
       <div class="info-item" data-item>
         <button class="info-toggle" data-toggle>
           <span><span class="icon">⌖</span> &nbsp;Onde dá para aplicar</span>
@@ -259,8 +275,29 @@
     </div>
 
     <div class="section-label">Kits de PPF</div>
+    <p class="note-kits" style="color:var(--text-dim);font-size:14px;line-height:1.55;margin:-6px 0 18px;">Trabalhamos em kits, de acordo com o que você quer proteger. Se preferir, no montador você escolhe peça por peça.</p>
     <div class="grid" id="gridPpf"></div>
     <a class="btn primary kit-cta" href="/kit-ppf.html">Monte seu kit de PPF</a>
+  </section>
+
+  <!-- ───────── Montar kit ───────── -->
+  <section id="monte" class="bloco final">
+    <h2>Monte o seu kit</h2>
+    <p>Escolha o que quer proteger e envie o pedido pronto pelo WhatsApp.</p>
+    <div class="cta-row">
+      <a class="cta" href="/kit-pelicula.html">
+        <span class="k">Insulfilm</span>
+        <b>Monte seu kit de película</b>
+        <span class="d">Escolha a linha e o tom de cada vidro.</span>
+        <span class="go">Montar kit →</span>
+      </a>
+      <a class="cta" href="/kit-ppf.html">
+        <span class="k">PPF</span>
+        <b>Monte seu kit de PPF</b>
+        <span class="d">Toque nas peças do carro que quer proteger.</span>
+        <span class="go">Montar kit →</span>
+      </a>
+    </div>
   </section>
 </main>
 
@@ -284,10 +321,6 @@ const films = [
     tagline: 'O ponto de partida com acabamento impecável',
     desc: 'A porta de entrada pra quem quer mais privacidade sem abrir mão de um acabamento bonito. Aplicação bem-feita, uniforme e sem bolhas, pensada pra durar com qualidade no dia a dia.',
     features: ['Privacidade', 'Acabamento estético'],
-    prices: [
-      { label: 'Laterais e traseiro', value: 'R$ 360,00' },
-      { label: 'Para-brisa', value: 'R$ 120,00' },
-    ]
   },
   {
     id: 'nano-carbono',
@@ -296,10 +329,6 @@ const films = [
     tagline: 'Mais conforto térmico e durabilidade real',
     desc: 'Um passo acima da linha Profissional: a tecnologia em carbono entrega uma rejeição de calor superior, então o carro esquenta bem menos no sol. E o principal — ela não desbota nem fica arroxeada com o tempo, mantendo o visual por muito mais tempo.',
     features: ['Não desbota', 'Maior rejeição de calor', 'Alta durabilidade'],
-    prices: [
-      { label: 'Laterais e traseiro', value: 'R$ 450,00' },
-      { label: 'Para-brisa', value: 'R$ 250,00' },
-    ]
   },
   {
     id: 'nano-ceramica',
@@ -308,10 +337,6 @@ const films = [
     tagline: 'O topo de linha em tecnologia e conforto',
     desc: 'A nossa linha mais avançada. É campeã em rejeição de calor — o interior do carro esquenta muito menos, mesmo em dias quentes. Mantém uma ótima visibilidade por dentro, mesmo sendo escura por fora, e tem a maior durabilidade do mercado. Para quem quer o melhor sem abrir mão de nada.',
     features: ['Máxima rejeição de calor', 'Visibilidade interna preservada', 'Maior durabilidade do mercado'],
-    prices: [
-      { label: 'Laterais e traseiro', value: 'R$ 650,00' },
-      { label: 'Para-brisa', value: 'R$ 350,00' },
-    ]
   },
   {
     id: 'ps8',
@@ -320,12 +345,6 @@ const films = [
     tagline: 'Segurança em primeiro lugar',
     desc: 'Não é sobre estética — é sobre proteção. Essa película ultra resistente aumenta a espessura efetiva do vidro, dificultando bastante que ele quebre ou estilhace em caso de impacto ou tentativa de furto. Uma camada a mais de segurança pro seu carro e pra quem está dentro dele. Disponível em versão tonalizada ou incolor — a incolor é ótima pra quem quer a proteção sem escurecer o vidro, e pode ser combinada com a Nano Carbono ou a Nano Cerâmica por cima, unindo segurança e conforto térmico no mesmo vidro.',
     features: ['Alta resistência a impacto', 'Dificulta arrombamento', 'Reduz estilhaçamento', 'Versão tonalizada ou incolor', 'Combina com Nano Carbono/Cerâmica'],
-    prices: [
-      { label: 'Incolor', value: 'R$ 1.000,00' },
-      { label: 'Antivandalismo + Película Profissional', value: 'R$ 1.480,00' },
-      { label: 'Antivandalismo + Nano Carbono', value: 'R$ 1.700,00' },
-      { label: 'Antivandalismo + Nano Cerâmica', value: 'R$ 2.000,00' },
-    ]
   },
 ];
 
@@ -359,16 +378,13 @@ function render(){
     <div class="card" tabindex="0" data-id="${f.id}" data-tipo="pel" role="button" aria-label="Ver detalhes de ${f.name}">
       <div class="card-top"><h3>${esc(f.name)}</h3><span class="warranty-tag">${esc(f.warranty)}</span></div>
       <p class="desc">${esc(f.tagline)}</p>
-      <div class="card-foot">
-        <span>${f.prices.length > 1 ? f.prices.length + ' opções de valor' : 'Valor único'}</span>
-        <span class="price-hint">a partir de ${f.prices[0].value}</span>
-      </div>
+      <div class="card-foot"><span>${f.features.length} destaques</span><span class="price-hint">ver detalhes →</span></div>
     </div>`).join('');
   gridPpf.innerHTML = ppfKits.map(k => `
     <div class="card" tabindex="0" data-id="${k.id}" data-tipo="ppf" role="button" aria-label="Ver detalhes do ${k.name}">
       <div class="card-top"><h3>${esc(k.name)}</h3><span class="warranty-tag">${esc(k.tag)}</span></div>
       <p class="desc">${esc(k.tagline)}</p>
-      <div class="card-foot"><span>${k.items.length} itens</span><span class="price-hint">ver valor →</span></div>
+      <div class="card-foot"><span>${k.items.length} itens</span><span class="price-hint">ver detalhes →</span></div>
     </div>`).join('');
   document.querySelectorAll('.card').forEach(card => {
     const abrir = () => openModal(card.dataset.tipo, card.dataset.id);
@@ -392,10 +408,8 @@ function openModal(tipo, id){
       <p class="body-text">${esc(k.desc)}</p>
       <div class="modal-section-title">O que inclui</div>
       <ul class="feature-list">${k.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
-      <div class="modal-section-title">Valores</div>
-      <p class="body-text">O valor muda conforme o tipo do carro. Monte o kit para ver a estimativa na hora — o orçamento final é confirmado depois que a gente avalia o veículo.</p>
       <div class="modal-cta">
-        <a class="btn primary" href="/kit-ppf.html?kit=${k.id}">Montar este kit e ver o valor</a>
+        <a class="btn primary" href="/kit-ppf.html?kit=${k.id}">Montar este kit</a>
         <a class="btn" href="${waLink(k.name,'ppf')}" target="_blank" rel="noopener">Falar pelo WhatsApp</a>
       </div>`;
   } else {
@@ -407,8 +421,6 @@ function openModal(tipo, id){
       <p class="body-text">${esc(f.desc)}</p>
       <div class="modal-section-title">Benefícios</div>
       <ul class="feature-list">${f.features.map(ft => `<li>${esc(ft)}</li>`).join('')}</ul>
-      <div class="modal-section-title">Valores</div>
-      <table class="price-table">${f.prices.map(p => `<tr><td>${p.label}</td><td>${p.value}</td></tr>`).join('')}</table>
       <div class="modal-cta">
         ${f.id === 'ps8' ? '' : `<a class="btn primary" href="/kit-pelicula.html?linha=${f.id}">Montar meu kit com esta linha</a>`}
         <a class="btn ${f.id === 'ps8' ? 'primary' : ''}" href="${waLink(f.name,'pel')}" target="_blank" rel="noopener">Agendar pelo WhatsApp</a>
@@ -421,16 +433,6 @@ function closeModal(){ overlay.classList.remove('open'); }
 overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 document.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', () => btn.closest('[data-item]').classList.toggle('open')));
-
-// ── Abas: Películas de vidro | PPF ─────────────────────────────────────────
-function abrirAba(qual, atualizaHash){
-  const ppf = qual === 'ppf';
-  $('painelPel').hidden = ppf; $('painelPpf').hidden = !ppf;
-  $('tabPel').setAttribute('aria-selected', String(!ppf)); $('tabPpf').setAttribute('aria-selected', String(ppf));
-  if (atualizaHash){ try { history.replaceState(null, '', ppf ? '#ppf' : location.pathname + location.search); } catch (e) {} }
-}
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => abrirAba(t.dataset.tab, true)));
-abrirAba(location.hash === '#ppf' ? 'ppf' : 'pel', false);
 
 // ── Simulador de tonalidade (foto do carro) ────────────────────────────────
 const TONALIDADES = [
@@ -448,7 +450,7 @@ tintBtns.innerHTML = TONALIDADES.map(t => `<button class="tint-btn" type="button
 tintBtns.querySelectorAll('.tint-btn').forEach(btn => btn.addEventListener('click', () => { const t = TONALIDADES.find(x => x.id === btn.dataset.id); if (t) aplicarTonalidade(t); }));
 aplicarTonalidade(TONALIDADES[0]);
 
-// ── Preços dinâmicos (vêm do app Oficina Pro, aba "Preços Película") ───────
+// ── Linhas e kits cadastrados no app Oficina Pro (aba "Preços Película"). Nenhum preço é exibido aqui. ──
 // Lê a tabela "config" (chave="precos_peliculas") no Supabase. Se não conseguir
 // (offline, RLS, ou nunca foi salvo pelo app), a página usa os valores fixos acima.
 const SUPABASE_URL = "https://wpvbrutwkgzzdfovbszy.supabase.co";
@@ -460,32 +462,12 @@ async function aplicarPrecosDinamicos(){
     const { data, error } = await supa.from("config").select("valor").eq("chave","precos_peliculas").maybeSingle();
     if (error || !data || !data.valor) return;
     const p = data.valor;
-    const brl = v => "R$ " + Number(v).toFixed(2).replace(".", ",");
-    const setPrice = (id, idx, val) => {
-      if (val === undefined || val === null || val === "") return;
-      const f = films.find(x => x.id === id);
-      if (f && f.prices[idx]) f.prices[idx].value = brl(val);
-    };
-    setPrice('profissional', 0, p.profissional && p.profissional.lateralTraseiro);
-    setPrice('profissional', 1, p.profissional && p.profissional.paraBrisa);
-    setPrice('nano-carbono', 0, p.nanoCarbono && p.nanoCarbono.lateralTraseiro);
-    setPrice('nano-carbono', 1, p.nanoCarbono && p.nanoCarbono.paraBrisa);
-    setPrice('nano-ceramica', 0, p.nanoCeramica && p.nanoCeramica.lateralTraseiro);
-    setPrice('nano-ceramica', 1, p.nanoCeramica && p.nanoCeramica.paraBrisa);
-    setPrice('ps8', 0, p.ps8 && p.ps8.incolor);
-    setPrice('ps8', 1, p.ps8 && p.ps8.comProfissional);
-    setPrice('ps8', 2, p.ps8 && p.ps8.comNanoCarbono);
-    setPrice('ps8', 3, p.ps8 && p.ps8.comNanoCeramica);
-    if (p.remocao !== undefined && p.remocao !== null && p.remocao !== "") {
-      const el = $('removalPrice'); if (el) el.textContent = brl(p.remocao);
-    }
     // linhas de película extras cadastradas no app
     (Array.isArray(p.linhasExtras) ? p.linhasExtras : []).forEach(x => {
       if (!x || !x.nome || films.some(f => f.id === String(x.id))) return;
       films.splice(films.findIndex(f => f.id === 'ps8') > -1 ? films.findIndex(f => f.id === 'ps8') : films.length, 0, {
         id: String(x.id), name: String(x.nome), warranty: x.garantia || 'Garantia da oficina', tagline: x.desc || '', desc: x.desc || '',
-        features: Array.isArray(x.beneficios) ? x.beneficios : [],
-        prices: [ { label: 'Laterais e traseiro', value: brl(x.lateralTraseiro || 0) }, { label: 'Para-brisa', value: brl(x.paraBrisa || 0) } ]
+        features: Array.isArray(x.beneficios) ? x.beneficios : []
       });
     });
     // kits de PPF vindos do app (somente os marcados para aparecer no catálogo)

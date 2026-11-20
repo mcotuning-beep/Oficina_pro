@@ -150,7 +150,7 @@
         <img class="sim-glass d" src="/carro-pelicula-vidros-diant.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
         <img class="sim-glass t" src="/carro-pelicula-vidros-tras.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
       </div>
-      <p class="note" style="margin-top:8px">A imagem mostra as portas do lado esquerdo. O para-brisa e o vigia entram no kit, mas não aparecem nesta foto.</p>
+      <p class="note" style="margin-top:8px">A imagem mostra as portas. O para-brisa e o vigia entram no kit, mas não aparecem nesta foto.</p>
       <div id="vidros" style="display:flex;flex-direction:column;gap:10px;margin-top:12px"></div>
       <details class="tons" style="margin-top:12px"><summary>O que significa cada tom</summary><div id="simCaption"></div></details>
       <div class="legal" style="margin-top:12px">⚖ <strong>Resolução CONTRAN 989/2022:</strong> o para-brisa e os vidros laterais dianteiros precisam manter, no mínimo, <strong>70% de transparência</strong> (vidro + película somados). Os vidros traseiros e o vigia não têm percentual mínimo, desde que o carro tenha retrovisores externos nos dois lados. Películas espelhadas ou refletivas são proibidas em qualquer vidro.</div>
@@ -197,8 +197,8 @@ const TONS = [
 const tomDe = id => TONS.find(x => x.id === id) || TONS[2];
 const GRUPOS_VIDRO = [
   { id:'brisa', nome:'Para-brisa', keys:['brisa'], sem:true },
-  { id:'dian', nome:'Portas dianteiras', keys:['dE','dD'], lados:true },
-  { id:'tras', nome:'Portas traseiras', keys:['tE','tD'], lados:true },
+  { id:'dian', nome:'Portas dianteiras', keys:['dE','dD'] },
+  { id:'tras', nome:'Portas traseiras', keys:['tE','tD'] },
   { id:'vigia', nome:'Vigia (vidro de trás)', keys:['vigia'] }
 ];
 const ladoPrev = 'E';
@@ -353,7 +353,7 @@ function resolverLinha(){ const i = LINHAS.findIndex(l => l.id === estado.linhaI
     const ok = id => TONS.some(t => t.id === id);
     if (s.v && typeof s.v === 'object') Object.keys(estado.v).forEach(k => { if (ok(s.v[k])) estado.v[k] = s.v[k]; });
     else if (ok(s.tom)) ['dD','dE','tE','tD','vigia'].forEach(k => { estado.v[k] = s.tom; }); // formato antigo
-    if (s.sep && typeof s.sep === 'object') { estado.sep.dian = !!s.sep.dian; estado.sep.tras = !!s.sep.tras; }
+    estado.v.dD = estado.v.dE; estado.v.tD = estado.v.tE; // sempre por parte: as duas portas têm o mesmo tom
     if (typeof s.linhaId === 'string') estado.linhaId = s.linhaId;
     ['base','brisa','remocao','ps8'].forEach(k => { if (typeof s[k] === 'boolean') estado[k] = s[k]; });
     if (s.extras && typeof s.extras === 'object') Object.keys(s.extras).forEach(k => { estado.extras[k] = !!s.extras[k]; });
