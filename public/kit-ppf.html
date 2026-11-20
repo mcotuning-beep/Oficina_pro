@@ -87,6 +87,16 @@
   .grupo-corpo{ display:flex; flex-direction:column; gap:6px; padding-bottom:12px; }
   .marcar{ align-self:flex-end; border:0; background:transparent; color:var(--amber); font:inherit; font-size:13px; font-weight:600; cursor:pointer; padding:4px 2px; }
   .nada{ color:var(--text-faint); padding:6px 2px; display:none; }
+
+  .list .sec{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint); padding:14px 0 6px; border-bottom:1px solid var(--amber-dim); }
+  .list .sec b{ color:var(--text); font-weight:600; letter-spacing:.02em; font-size:14px; }
+  .list .ro .val{ color:var(--text-dim); }
+  .list .edit{ border-bottom:0; padding:8px 0 0; }
+  .list .edit a{ color:var(--amber); font-size:13px; text-decoration:none; border-bottom:1px solid var(--amber-dim); }
+  .btn.cta{ background:rgba(79,183,171,.12); border:1px solid var(--teal); color:var(--teal); }
+  .btn.cta:hover{ background:rgba(79,183,171,.22); }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--text-faint); font-weight:500; font-size:13px; padding:10px 16px; }
+  .btn.ghost:hover{ color:var(--text); border-color:var(--amber-dim); }
 </style>
 </head>
 <body>
@@ -129,14 +139,15 @@
   </section>
 
   <section class="panel resumo" id="resumo" aria-label="Resumo">
-    <h2>Seu pacote</h2>
+    <h2 id="tituloResumo">Seu pacote</h2>
     <ul class="list" id="lista"></ul>
     <div class="total"><span class="lbl">Total estimado</span><span class="num" id="total">R$ 0,00</span></div>
     <p class="note">Valor estimado para o tipo de carro escolhido. O orçamento final é confirmado pela oficina depois de ver o carro.</p>
     <div class="actions">
       <a class="btn primary" id="wa" target="_blank" rel="noopener">Enviar pacote no WhatsApp</a>
       <button class="btn" id="copiar" type="button">Copiar resumo</button>
-      <a class="btn" href="/kit-pelicula.html">Também quero película nos vidros</a>
+      <a class="btn cta" id="irPel" href="/kit-pelicula.html?de=ppf">Também quero película nos vidros</a>
+      <button class="btn ghost" id="zerar" type="button">Começar de novo</button>
     </div>
   </section>
 </div>
@@ -170,6 +181,12 @@ async function lerConfigPrecos(){
 
   var GRUPOS = [], PARTES = [], KITS = [];
   var estado = { cat: 1, sel: {} };
+  // Kit combinado (película + PPF): guardado no navegador do cliente por 6 horas, compartilhado com a página de película.
+  var KIT_KEY = "ms-kit-v1", KIT_TTL = 6 * 3600 * 1000;
+  function lerKit() { try { var k = JSON.parse(localStorage.getItem(KIT_KEY) || "null"); if (!k || !k.t || Date.now() - k.t > KIT_TTL) return {}; return k; } catch (e) { return {}; } }
+  function gravarKit(parte, dados, modelo) { try { var k = lerKit(); k[parte] = dados; if (modelo !== undefined) k.modelo = modelo; k.t = Date.now(); localStorage.setItem(KIT_KEY, JSON.stringify(k)); } catch (e) {} }
+  function limparKit() { try { localStorage.removeItem(KIT_KEY); } catch (e) {} }
+  function outroKit() { var o = lerKit().pel; return (o && Array.isArray(o.itens) && o.itens.length) ? o : null; }
   function aplicarPpf(cfg) {
     GRUPOS = cfg.grupos.map(function (g) { return { id: String(g.id), g: g.g === "int" ? "int" : "ext", nome: String(g.nome || "") }; });
     var gids = GRUPOS.map(function (g) { return g.id; });
@@ -207,19 +224,28 @@ async function lerConfigPrecos(){
     var desc = descontos.reduce(function (s, d) { return s + d.valor; }, 0);
     return { itens: itens, subtotal: subtotal, descontos: descontos, desc: desc, total: subtotal - desc };
   }
-  function resumoTexto() {
-    var r = calculo(), modelo = $("modelo").value.trim();
+  function secaoTexto() {
+    var r = calculo();
     if (!r.itens.length) return "";
-    var t = "Olá! Montei um kit de PPF no catálogo da M.Scarpel.\n";
-    t += "Carro: " + CATS[estado.cat].nome + (modelo ? " (" + modelo + ")" : "") + "\n";
+    var t = "PPF (carro tipo " + CATS[estado.cat].nome + ")\n";
     ["ext", "int"].forEach(function (g) {
       var lista = r.itens.filter(function (x) { return gr(x).g === g; });
       if (!lista.length) return;
-      t += "\n" + (g === "ext" ? "Exterior" : "Interior") + ":\n";
+      t += (g === "ext" ? "Exterior" : "Interior") + ":\n";
       lista.forEach(function (x) { t += "- " + nomeParte(x) + ": " + BRL(precoParte(x)) + "\n"; });
     });
     r.descontos.forEach(function (d) { t += "- Desconto " + d.nome.toLowerCase() + ": -" + BRL(d.valor) + "\n"; });
-    t += "\nTotal estimado: " + BRL(r.total) + "\nPodemos conversar sobre o orçamento?";
+    return t;
+  }
+  function resumoTexto() {
+    var r = calculo(), modelo = $("modelo").value.trim(), o = outroKit(), sp = secaoTexto();
+    if (!sp && !o) return "";
+    var to = o ? Number(o.total) || 0 : 0;
+    var t = "Olá! Montei meu pacote no catálogo da M.Scarpel.\n";
+    if (modelo) t += "Carro: " + modelo + "\n";
+    if (o) t += "\n" + String(o.txt || "") + "Subtotal película: " + BRL(to) + "\n";
+    if (sp) t += "\n" + sp + (o ? "Subtotal PPF: " + BRL(r.total) + "\n" : "");
+    t += "\nTotal estimado" + (sp && o ? " (película + PPF)" : "") + ": " + BRL(r.total + to) + "\nPodemos conversar sobre o orçamento?";
     return t;
   }
 
@@ -256,15 +282,24 @@ async function lerConfigPrecos(){
     aplicarBusca();
   }
   function atualizar() {
-    var r = calculo(), li = "";
+    var r = calculo(), o = outroKit(), to = o ? Number(o.total) || 0 : 0, tt = r.total + to, li = "";
+    if (o) li += '<li class="sec"><span>Película</span><b>' + BRL(to) + '</b></li>' + o.itens.map(function (x) {
+      return '<li class="ro"><span class="name">' + esc(x.nome) + (x.det ? '<small>' + esc(x.det) + '</small>' : '') + '</span><span class="val">' + (Number(x.valor) ? BRL(Number(x.valor)) : "a combinar") + '</span></li>';
+    }).join("") + '<li class="edit"><a href="/kit-pelicula.html?de=ppf">Editar película</a></li>' +
+      '<li class="sec"><span>PPF · ' + esc(CATS[estado.cat].nome) + '</span><b>' + BRL(r.total) + '</b></li>';
     r.itens.forEach(function (x) {
       li += '<li><span class="name">' + esc(nomeParte(x)) + '</span><span class="val">' + BRL(precoParte(x)) + '</span><button class="rm" type="button" data-rm="' + esc(x.id) + '" aria-label="Remover ' + esc(nomeParte(x)) + '">×</button></li>';
     });
     r.descontos.forEach(function (d) { li += '<li class="disc"><span class="name">Desconto: ' + esc(d.nome) + '</span><span class="val">-' + BRL(d.valor) + "</span></li>"; });
-    $("lista").innerHTML = li || '<li class="empty">Nenhuma peça escolhida ainda. Use um kit pronto ou abra os grupos.</li>';
-    $("total").textContent = BRL(r.total); $("bTotal").textContent = BRL(r.total);
-    $("bQtd").textContent = r.itens.length ? r.itens.length + (r.itens.length === 1 ? " peça" : " peças") : "Seu pacote";
+    $("lista").innerHTML = li + (r.itens.length ? "" : '<li class="empty">Nenhuma peça de PPF escolhida ainda. Use um kit pronto ou abra os grupos.</li>');
+    $("tituloResumo").textContent = (o && r.itens.length) ? "Seu pacote: película + PPF" : "Seu pacote";
+    $("total").textContent = BRL(tt); $("bTotal").textContent = BRL(tt);
+    var qtd = r.itens.length + (o ? o.itens.length : 0);
+    $("bQtd").textContent = qtd ? qtd + (qtd === 1 ? " item" : " itens") : "Seu pacote";
     $("wa").href = "https://wa.me/" + WHATSAPP_NUMBER + "?text=" + encodeURIComponent(resumoTexto() || "Olá! Gostaria de um orçamento de PPF.");
+    $("irPel").textContent = o ? "Editar a película do meu carro" : "Também quero película nos vidros";
+    var itensSalvos = r.itens.map(function (x) { return { nome: nomeParte(x), valor: precoParte(x) }; }).concat(r.descontos.map(function (d) { return { nome: "Desconto: " + d.nome, valor: -d.valor }; }));
+    gravarKit("ppf", { sel: estado.sel, cat: estado.cat, catNome: CATS[estado.cat].nome, itens: itensSalvos, total: r.total, qtd: r.itens.length, txt: secaoTexto() }, $("modelo").value.trim());
     document.querySelectorAll(".parte").forEach(function (b) {
       var x = parte(b.getAttribute("data-parte")); if (!x) return;
       b.setAttribute("aria-pressed", String(!!estado.sel[x.id]));
@@ -365,6 +400,21 @@ async function lerConfigPrecos(){
     atualizar();
   }
 
+  // retoma o que o cliente já escolheu e traz o modelo informado na página de película
+  (function () {
+    var kit = lerKit(), s = kit.ppf;
+    if (s && typeof s === "object") {
+      if (typeof s.cat === "number" && CATS[s.cat]) estado.cat = s.cat;
+      if (s.sel && typeof s.sel === "object") Object.keys(s.sel).forEach(function (id) { if (s.sel[id]) estado.sel[id] = true; });
+    }
+    if (kit.modelo) {
+      $("modelo").value = kit.modelo;
+      if (!s) { var i = detectar(kit.modelo); if (i > -1) estado.cat = i; }
+      var d = detectar(kit.modelo);
+      $("modeloHint").textContent = d > -1 ? "Reconhecido como " + CATS[d].nome + ". Você pode trocar nos botões." : "Não reconheci o modelo. Escolha o tipo nos botões.";
+    }
+  })();
+  $("zerar").addEventListener("click", function () { limparKit(); location.href = "/kit-ppf.html"; });
   aplicarPpf(PPF_BASE); montarTudo(); preSelecionar();
 
   // Preços e itens vindos do app Oficina Pro (aba "Preços Película"). Sem isso, valem os valores iniciais acima.
