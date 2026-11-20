@@ -150,8 +150,7 @@
         <img class="sim-glass d" src="/carro-pelicula-vidros-diant.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
         <img class="sim-glass t" src="/carro-pelicula-vidros-tras.png" width="1400" height="529" decoding="async" alt="" aria-hidden="true">
       </div>
-      <div class="lados" id="lados" role="group" aria-label="Lado do carro na imagem"><button type="button" data-lado="E" aria-pressed="true">Ver lado esquerdo</button><button type="button" data-lado="D" aria-pressed="false">Ver lado direito</button></div>
-      <p class="note" style="margin-top:8px">A imagem mostra as portas. O para-brisa e o vigia entram no kit, mas não aparecem nesta foto.</p>
+      <p class="note" style="margin-top:8px">A imagem mostra as portas do lado esquerdo. O para-brisa e o vigia entram no kit, mas não aparecem nesta foto.</p>
       <div id="vidros" style="display:flex;flex-direction:column;gap:10px;margin-top:12px"></div>
       <details class="tons" style="margin-top:12px"><summary>O que significa cada tom</summary><div id="simCaption"></div></details>
       <div class="legal" style="margin-top:12px">⚖ <strong>Resolução CONTRAN 989/2022:</strong> o para-brisa e os vidros laterais dianteiros precisam manter, no mínimo, <strong>70% de transparência</strong> (vidro + película somados). Os vidros traseiros e o vigia não têm percentual mínimo, desde que o carro tenha retrovisores externos nos dois lados. Películas espelhadas ou refletivas são proibidas em qualquer vidro.</div>
@@ -202,7 +201,7 @@ const GRUPOS_VIDRO = [
   { id:'tras', nome:'Portas traseiras', keys:['tE','tD'], lados:true },
   { id:'vigia', nome:'Vigia (vidro de trás)', keys:['vigia'] }
 ];
-let ladoPrev = 'E';
+const ladoPrev = 'E';
 const estado = { linha:1, linhaId:'nano-carbono', v:{ brisa:'lei', dE:'lei', dD:'lei', tE:'g20', tD:'g20', vigia:'g20' }, sep:{ dian:false, tras:false }, base:true, brisa:false, remocao:false, ps8:false, extras:{} };
 // Kit combinado (película + PPF): guardado no navegador do cliente por 6 horas, compartilhado com a página de PPF.
 const KIT_KEY = 'ms-kit-v1', KIT_TTL = 6*3600*1000;
@@ -308,10 +307,8 @@ function renderVidros(){
   });
   $('vidros').innerHTML = h;
   const sd = $('simStage');
-  sd.classList.toggle('esp', ladoPrev === 'D');
   sd.style.setProperty('--op-d', tomDe(v[ladoPrev === 'E' ? 'dE' : 'dD']).op);
   sd.style.setProperty('--op-t', tomDe(v[ladoPrev === 'E' ? 'tE' : 'tD']).op);
-  document.querySelectorAll('#lados button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lado === ladoPrev)));
   $('simCaption').innerHTML = TONS.map(t => '<p>' + t.txt + '</p>').join('');
 }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('show'),1800); }
@@ -319,7 +316,6 @@ function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
 function renderLinhas(){ $('linhas').innerHTML = LINHAS.map((l,i) => `<button type="button" class="linha" data-i="${i}" aria-pressed="false"><b>${esc(l.nome)}</b><span class="g">${esc(l.garantia || '')}</span><span class="d">${esc(l.desc || '')}</span><span class="lp"></span></button>`).join(''); }
 renderLinhas();
 $('linhas').addEventListener('click', e => { const b = e.target.closest('.linha'); if (b){ estado.linha = Number(b.dataset.i); estado.linhaId = LINHAS[estado.linha].id; estado.base = true; atualizar(); } });
-$('lados').addEventListener('click', e => { const b = e.target.closest('[data-lado]'); if (b){ ladoPrev = b.dataset.lado; atualizar(); } });
 $('vidros').addEventListener('click', e => {
   const s = e.target.closest('[data-sep]');
   if (s) {
