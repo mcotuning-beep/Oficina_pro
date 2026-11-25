@@ -1152,20 +1152,22 @@ function ModalPagamento({ os, onSave, onClose }) {
 function ModalAgendarOS({ os, onClose }) {
   const [semana, setSemana] = useState(0);
   const [diaIdx, setDiaIdx] = useState(null);
-  const [slot, setSlot] = useState(0);
+  const [hora, setHora] = useState("");
 
   const diasSemana = getSemana(semana);
-  const nomeSemana = ["Semana Atual","Próxima Semana","Terceira Semana"][semana];
 
   const confirmar = () => {
     if (diaIdx===null) return;
     const d = diasSemana[diaIdx];
-    const key = d.toISOString().slice(0,10)+"_"+slot;
-    const agenda = JSON.parse(localStorage.getItem("op_agenda")||"{}");
+    const data = isoLocal(d);
+    const agenda = lerAgenda();
+    // se a OS já estava agendada, move (não deixa duplicado)
+    Object.keys(agenda).forEach(k=>{ if (agenda[k] && agenda[k].tipo==="os" && agenda[k].osId===os.id) delete agenda[k]; });
+    const key = data+"_"+proximoSlot(agenda, data);
     const label = (os.cliente||os.placa||"OS")+" — "+(os.servicos||os.veiculo||"");
-    agenda[key] = { tipo:"os", osId:os.id, label:label.slice(0,60) };
-    localStorage.setItem("op_agenda", JSON.stringify(agenda));
-    toast("Agendado para "+d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"}));
+    agenda[key] = { tipo:"os", osId:os.id, label:label.slice(0,60), hora };
+    gravarAgenda(agenda);
+    toast("Agendado para "+d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"})+(hora?" às "+hora:""));
     onClose();
   };
 
@@ -1204,18 +1206,12 @@ function ModalAgendarOS({ os, onClose }) {
           ))}
         </div>
 
-        {/* Slot (posição na lista) */}
+        {/* Horário */}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Posição no dia</div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <button onClick={()=>setSlot(s=>Math.max(0,s-1))}
-              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:6,color:T.text,
-                cursor:"pointer",padding:"4px 10px",fontSize:16}}>−</button>
-            <span style={{fontWeight:700,color:T.accent,fontSize:16,minWidth:24,textAlign:"center"}}>{slot+1}</span>
-            <button onClick={()=>setSlot(s=>Math.min(11,s+1))}
-              style={{background:T.bg,border:"1px solid "+T.border,borderRadius:6,color:T.text,
-                cursor:"pointer",padding:"4px 10px",fontSize:16}}>+</button>
-          </div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Horário</div>
+          <input type="time" value={hora} onChange={e=>setHora(e.target.value)}
+            style={{background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"8px 10px",
+              fontSize:14,fontFamily:"inherit",colorScheme:"dark",outline:"none"}} />
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -2898,7 +2894,7 @@ function TelaOS({ os:ini, onSave, onClose, nivelAcesso="admin" }) {
 // ── ABA AGENDAMENTO ───────────────────────────────────────────────────────────
 const DIAS = ["SEG","TER","QUA","QUI","SEX","SAB"];
 const DIAS_FULL = ["Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
-const MAX_SLOTS = 12; // linhas por dia
+const MAX_SLOTS = 12; // mantido por compatibilidade
 
 function getSegunda(offset=0) {
   const d = new Date();
@@ -2923,151 +2919,426 @@ function fmtDiaMes(d) {
   return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
 }
 
-function AbaAgenda() {
-  const [agendamentos, setAgendamentos] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem("op_agenda")||"{}"); } catch { return {}; }
+// ── helpers da agenda ─────────────────────────────────────────────────────────
+// Cada agendamento fica em op_agenda com a chave "AAAA-MM-DD_n".
+// Formatos aceitos: {tipo:"ag", nome, servico, hora, obs} (novo), {tipo:"os", osId, label, hora, obs}
+// e o texto livre antigo (string), que é convertido só para exibição.
+const isoLocal = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const lerAgenda = () => { try { const v = JSON.parse(localStorage.getItem("op_agenda")||"{}"); return v && typeof v==="object" ? v : {}; } catch { return {}; } };
+const gravarAgenda = obj => localStorage.setItem("op_agenda", JSON.stringify(obj));
+const proximoSlot = (agenda, dataISO) => {
+  const usados = new Set(Object.keys(agenda).filter(k=>k.startsWith(dataISO+"_")).map(k=>parseInt(k.split("_")[1],10)));
+  let n = 0; while (usados.has(n)) n++;
+  return n;
+};
+const escH = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dataExtenso = iso => {
+  const s = new Date(iso+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"});
+  return s.charAt(0).toUpperCase()+s.slice(1);
+};
+const semanaDaData = iso => { // deslocamento (em semanas) da semana atual até a semana da data
+  const d = new Date(iso+"T12:00:00"); const dia = d.getDay();
+  const seg = new Date(d); seg.setDate(d.getDate()+(dia===0?-6:1-dia)); seg.setHours(0,0,0,0);
+  return Math.round((seg - getSegunda(0)) / (7*86400000));
+};
+
+function normalizarAgenda(key, raw) {
+  const [data, slotStr] = key.split("_");
+  const base = { key, data, slot: parseInt(slotStr,10)||0, raw };
+  if (raw && typeof raw==="object" && raw.tipo==="os") {
+    const label = String(raw.label||""); const i = label.indexOf(" — ");
+    return { ...base, tipo:"os", osId:raw.osId, hora:raw.hora||"", obs:raw.obs||"",
+      nome: i>-1 ? label.slice(0,i) : label, servico: i>-1 ? label.slice(i+3) : "" };
+  }
+  if (raw && typeof raw==="object" && raw.tipo==="ag") {
+    return { ...base, tipo:"ag", hora:raw.hora||"", nome:raw.nome||"", servico:raw.servico||"", obs:raw.obs||"" };
+  }
+  // texto livre antigo: tenta separar o horário (ex.: "Higor corolla fechadura 8:00")
+  let texto = String((raw && typeof raw==="object" ? (raw.label||"") : raw) || "").trim();
+  let hora = "";
+  const re = /(?:^|\s)([01]?\d|2[0-3])\s?(?::|h)\s?([0-5]\d)?(?=\s|$|[,.;])/gi;
+  let m, ultimo = null;
+  while ((m = re.exec(texto))) ultimo = m;
+  if (ultimo) {
+    hora = String(ultimo[1]).padStart(2,"0")+":"+(ultimo[2]||"00");
+    texto = (texto.slice(0,ultimo.index)+" "+texto.slice(ultimo.index+ultimo[0].length)).replace(/\s+/g," ").trim();
+  }
+  return { ...base, tipo:"ag", legado:true, hora, nome:texto, servico:"", obs:"" };
+}
+
+const ordenarAgenda = (a,b) => (a.hora||"99:99").localeCompare(b.hora||"99:99") || a.slot-b.slot;
+
+// ── COMPROVANTE DE AGENDAMENTO ────────────────────────────────────────────────
+function ModalComprovanteAgenda({ item, onClose }) {
+  const previewFrameRef = useRef(null);
+  const dataTxt = dataExtenso(item.data);
+  const horaTxt = item.hora || "A combinar";
+
+  const texto = [
+    "*Comprovante de agendamento — M.Scarpel*",
+    "",
+    "📅 "+dataTxt,
+    "⏰ Horário: "+horaTxt,
+    "👤 Nome: "+(item.nome||"-"),
+    item.servico ? "🔧 Serviço: "+item.servico : null,
+    item.obs ? "📝 Obs: "+item.obs : null,
+    "",
+    "📍 Av. Cachoeira 747 A3, Vila Pindorama, Barueri/SP",
+    "📞 (11) 9.3922-8558",
+  ].filter(l=>l!==null).join("\n");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comprovante de Agendamento</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-size:12px;line-height:1.4}
+.doc-page{max-width:520px;margin:0 auto;background:#fff}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
+.enome{font-size:16px;font-weight:900}
+.enome span{color:#d97706}
+.edet{font-size:9px;color:#555;margin-top:3px;line-height:1.4}
+.os-box{border:1px solid #111;border-radius:6px;padding:6px 10px;text-align:right;font-size:11px}
+.titulo{text-align:center;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#d97706;margin-bottom:10px}
+.quando{background:#111;color:#fff;border-radius:10px;padding:16px 12px;text-align:center;margin-bottom:14px}
+.quando .dia{font-size:13px;color:#ddd}
+.quando .hora{font-size:38px;font-weight:900;color:#fbbf24;letter-spacing:1px;margin-top:2px}
+.lin{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid #eee}
+.lb{width:76px;flex-shrink:0;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:#999;padding-top:2px}
+.vl{flex:1;font-size:15px;font-weight:700;word-break:break-word}
+.vl.obs{font-size:13px;font-weight:400;color:#333}
+.aviso{margin-top:14px;font-size:10px;color:#666;text-align:center}
+.brand-foot{text-align:center;font-weight:900;font-size:11px;margin-top:14px}
+.brand-foot span{color:#d97706}
+.foot{display:flex;justify-content:space-between;margin-top:10px;border-top:1px dashed #ddd;padding-top:8px;font-size:8.5px;color:#666}
+</style></head>
+<body>
+<div class="doc-page">
+  <div class="hdr">
+    <div>
+      <div class="enome">M.<span>SCARPEL</span></div>
+      <div class="edet">Serviços Automotivos<br>Av. Cachoeira 747 A3, Vila Pindorama, Barueri/SP<br>(11) 9.3922-8558 &nbsp;|&nbsp; CNPJ: 17.562.963/0001-81</div>
+    </div>
+    <div class="os-box">Emitido em<br><b>${fmtDate(today())}</b></div>
+  </div>
+  <div class="titulo">Comprovante de agendamento</div>
+  <div class="quando"><div class="dia">${escH(dataTxt)}</div><div class="hora">${escH(horaTxt)}</div></div>
+  <div class="lin"><span class="lb">Nome</span><span class="vl">${escH(item.nome||"-")}</span></div>
+  ${item.servico ? `<div class="lin"><span class="lb">Serviço</span><span class="vl">${escH(item.servico)}</span></div>` : ""}
+  ${item.obs ? `<div class="lin"><span class="lb">Obs</span><span class="vl obs">${escH(item.obs)}</span></div>` : ""}
+  <div class="aviso">Dúvidas ou necessidade de remarcar? Fale com a gente pelo WhatsApp (11) 9.3922-8558.</div>
+  <div class="brand-foot">M.<span>SCARPEL</span> Serviços Automotivos</div>
+  <div class="foot"><div><b>Fale conosco</b><br>(11) 9.3922-8558</div><div><b>Qualidade e confiança</b><br>Compromisso com o seu veículo</div></div>
+</div>
+</body></html>`;
+
+  const loadScript = (src) => new Promise((res,rej)=>{
+    if (document.querySelector('script[src="'+src+'"]')) { res(); return; }
+    const s = document.createElement("script");
+    s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error("Falha ao carregar biblioteca (sem internet ou CDN bloqueado)"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("Tempo esgotado ao carregar biblioteca. Verifique sua conexão.")), 10000);
   });
-  const [modal, setModal] = useState(null); // {key, valor}
-  const [inputVal, setInputVal] = useState("");
 
-  const salvar = (key, valor) => {
-    const novo = {...agendamentos, [key]: valor};
-    if (!valor) delete novo[key];
-    localStorage.setItem("op_agenda", JSON.stringify(novo));
-    setAgendamentos(novo);
+  const capturar = async () => {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const frame = previewFrameRef.current;
+    const w = Math.min(Math.max(Math.round(frame ? frame.getBoundingClientRect().width : 420), 390), 520);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:"+w+"px;height:1px;border:none;background:#fff;";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument;
+    doc.open(); doc.write(html); doc.close();
+    doc.documentElement.style.width = w+"px";
+    doc.body.style.width = w+"px"; doc.body.style.margin = "0";
+    await new Promise(r=>setTimeout(r,300));
+    const h = Math.ceil(doc.body.scrollHeight);
+    iframe.style.height = h+"px";
+    const canvas = await window.html2canvas(doc.body, { scale:2, useCORS:true, allowTaint:true, windowWidth:w, width:w, height:h, backgroundColor:"#ffffff" });
+    document.body.removeChild(iframe);
+    return canvas;
   };
 
-  const abrirModal = (key) => {
-    setInputVal(agendamentos[key]||"");
-    setModal(key);
+  const compartilharImagem = async () => {
+    toast("Gerando imagem...");
+    try {
+      const canvas = await capturar();
+      const nome = "Agendamento_"+(item.nome||"cliente").replace(/[^a-zA-Z0-9]+/g,"_")+"_"+item.data+".png";
+      const blob = await new Promise(res => canvas.toBlob(res,"image/png",1.0));
+      const file = new File([blob], nome, {type:"image/png"});
+      if (navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
+        await navigator.share({ files:[file], title:"Comprovante de agendamento — M.Scarpel", text:"Agendamento: "+dataTxt+" às "+horaTxt });
+        return;
+      }
+      const link = document.createElement("a");
+      link.download = nome; link.href = canvas.toDataURL("image/png"); link.click();
+      toast("Imagem salva nos downloads.");
+    } catch(e) {
+      if (e.name!=="AbortError") alert("Erro ao compartilhar imagem: "+e.message);
+    }
   };
 
-  const confirmar = () => {
-    salvar(modal, inputVal.trim());
-    setModal(null);
+  const copiarTexto = async () => {
+    try { await navigator.clipboard.writeText(texto); toast("Texto copiado!"); }
+    catch { alert(texto); }
   };
 
-  const limpar = () => {
-    salvar(modal, "");
-    setModal(null);
+  const whatsapp = () => window.open("https://wa.me/?text="+encodeURIComponent(texto), "_blank");
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:300,display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 8px 8px 16px",flexShrink:0,background:T.surface,borderBottom:"1px solid "+T.border}}>
+        <span style={{fontWeight:800,fontSize:14,color:T.text}}>Comprovante de agendamento</span>
+        <button onClick={onClose} aria-label="Fechar comprovante" style={{width:38,height:38,borderRadius:19,border:"1px solid "+T.border,
+          background:"transparent",color:T.text,fontSize:22,lineHeight:"34px",cursor:"pointer"}}>×</button>
+      </div>
+      <div style={{flex:1,overflow:"hidden",background:"#fff"}}>
+        <iframe ref={previewFrameRef} srcDoc={html} style={{width:"100%",height:"100%",border:"none",background:"#fff"}} title="Comprovante de agendamento" />
+      </div>
+      <div style={{background:T.surface,borderTop:"1px solid "+T.border,padding:"10px 14px",
+        display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,flexShrink:0}}>
+        <Btn v="green" onClick={whatsapp}>💬 WhatsApp</Btn>
+        <Btn v="orange" onClick={compartilharImagem}>📤 Imagem</Btn>
+        <Btn v="ghost" onClick={copiarTexto}>📋 Texto</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── AGENDA ────────────────────────────────────────────────────────────────────
+function AbaAgenda() {
+  const [agenda, setAgenda] = useState(lerAgenda);
+  const [semana, setSemana] = useState(0);
+  const [diaSel, setDiaSel] = useState(()=>isoLocal(new Date()));
+  const [form, setForm] = useState(null);
+  const [comprovante, setComprovante] = useState(null);
+  const [vista, setVista] = useState("geral"); // "geral" = 3 semanas | "dia" = detalhe do dia
+  const [inicio, setInicio] = useState(0);     // semana em que a visão geral começa
+
+  // pega as mudanças vindas da sincronização quando o app volta ao foco
+  useEffect(()=>{
+    const f = () => setAgenda(lerAgenda());
+    window.addEventListener("focus", f);
+    return () => window.removeEventListener("focus", f);
+  },[]);
+
+  const gravar = (novo) => { gravarAgenda(novo); setAgenda(novo); };
+
+  const dias = getSemana(semana);
+  const hoje = isoLocal(new Date());
+  const diaAtual = dias.some(d=>isoLocal(d)===diaSel) ? diaSel : isoLocal(dias[0]);
+
+  const todos = Object.keys(agenda).map(k=>normalizarAgenda(k, agenda[k]));
+  const doDia = (iso) => todos.filter(i=>i.data===iso).sort(ordenarAgenda);
+  const itensDia = doDia(diaAtual);
+
+  const irSemana = (delta) => { const n = semana+delta; setSemana(n); setDiaSel(isoLocal(getSemana(n)[0])); };
+  const irHoje = () => { setSemana(0); setDiaSel(hoje); };
+
+  const abrirDia = (iso) => { setSemana(semanaDaData(iso)); setDiaSel(iso); setVista("dia"); };
+  const dataPadrao = () => {
+    const base = vista==="dia" ? diaAtual : hoje;
+    const d = new Date(base+"T12:00:00"); if (d.getDay()===0) d.setDate(d.getDate()+1);
+    return isoLocal(d);
+  };
+  const novo = () => setForm({ keyOrig:null, tipo:"ag", data:dataPadrao(), hora:"", nome:"", servico:"", obs:"" });
+  const editar = (it) => setForm({ keyOrig:it.key, tipo:it.tipo, osId:it.osId, labelOS: it.tipo==="os" ? String(it.raw.label||"") : "",
+    data:it.data, hora:it.hora, nome:it.nome, servico:it.servico, obs:it.obs });
+
+  const salvarForm = () => {
+    if (!form.data) { toast("Escolha a data."); return; }
+    if (new Date(form.data+"T12:00:00").getDay()===0) { toast("A agenda não tem domingo. Escolha de segunda a sábado."); return; }
+    if (form.tipo==="ag" && !form.nome.trim()) { toast("Informe o nome do cliente."); return; }
+    const obj = { ...agenda };
+    if (form.keyOrig) delete obj[form.keyOrig];
+    const key = (form.keyOrig && form.keyOrig.split("_")[0]===form.data) ? form.keyOrig : form.data+"_"+proximoSlot(obj, form.data);
+    obj[key] = form.tipo==="os"
+      ? { tipo:"os", osId:form.osId, label:form.labelOS, hora:form.hora, obs:form.obs.trim() }
+      : { tipo:"ag", nome:form.nome.trim(), servico:form.servico.trim(), hora:form.hora, obs:form.obs.trim() };
+    gravar(obj);
+    setSemana(semanaDaData(form.data)); setDiaSel(form.data);
+    setForm(null);
+    toast(form.keyOrig ? "Agendamento atualizado!" : "Agendado!");
   };
 
-  const semanas = [0,1,2];
-  const nomesSemana = ["SEMANA ATUAL","PRÓXIMA SEMANA","TERCEIRA SEMANA"];
+  const remover = (it) => {
+    if (!window.confirm("Remover o agendamento de "+(it.nome||"este cliente")+"?")) return;
+    const obj = { ...agenda }; delete obj[it.key];
+    gravar(obj); toast("Removido da agenda!");
+  };
+
+  const abrirOS = (it) => {
+    window.dispatchEvent(new CustomEvent("switchTab",{detail:{tab:"ordens"}}));
+    setTimeout(()=>window.dispatchEvent(new CustomEvent("abrirOS",{detail:{osId:it.osId}})),100);
+  };
+
+  const rotuloSemana = semana===0 ? "Esta semana" : semana===1 ? "Próxima semana" : semana===-1 ? "Semana passada" : "";
+  const campo = { width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,color:T.text,padding:"10px 12px",
+    fontSize:14,fontFamily:"inherit",boxSizing:"border-box",colorScheme:"dark",outline:"none" };
+  const lab = { fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4,display:"block" };
 
   return (
     <div>
-      <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:16}}>📅 Agendamentos</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.text}}>📅 Agenda</div>
+        {vista==="geral"
+          ? <Btn onClick={novo}>＋ Agendar</Btn>
+          : <Btn v="ghost" onClick={()=>setVista("geral")}>← 3 semanas</Btn>}
+      </div>
 
-      {semanas.map(sw => {
-        const dias = getSemana(sw);
-        return (
-          <div key={sw} style={{marginBottom:24}}>
-            {/* Header da semana */}
-            <div style={{background:T.accent,borderRadius:"8px 8px 0 0",padding:"6px 12px",
-              fontSize:11,fontWeight:900,color:"#000",textAlign:"center",letterSpacing:1}}>
-              {nomesSemana[sw]}
-            </div>
-
-            {/* Dias header */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",
-              background:T.surface,border:"1px solid "+T.border,borderTop:"none"}}>
-              {dias.map((d,i)=>(
-                <div key={i} style={{padding:"6px 4px",textAlign:"center",
-                  borderRight:i<5?"1px solid "+T.border:"none"}}>
-                  <div style={{fontSize:10,fontWeight:700,color:T.accent}}>{DIAS[i]}</div>
-                  <div style={{fontSize:11,color:T.muted}}>{fmtDiaMes(d)}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Slots */}
-            {Array.from({length:MAX_SLOTS},(_,slot)=>(
-              <div key={slot} style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",
-                border:"1px solid "+T.border,borderTop:"none"}}>
-                {dias.map((d,di)=>{
-                  const key = d.toISOString().slice(0,10)+"_"+slot;
-                  const rawVal = agendamentos[key]; const val = rawVal||"";
-                  return (
-                    <div key={di} onClick={()=>{
-                        if(rawVal&&rawVal.tipo==="os"){
-                          // Navigate to OS - switch to OS tab and open it
-                          window.dispatchEvent(new CustomEvent("switchTab",{detail:{tab:"ordens"}}));
-                          setTimeout(()=>window.dispatchEvent(new CustomEvent("abrirOS",{detail:{osId:rawVal.osId}})),100);
-                        } else if(rawVal&&typeof rawVal==="object"){
-                          abrirModal(key);
-                        } else {
-                          abrirModal(key);
-                        }
-                      }}
-                      style={{
-                        minHeight:36,padding:"4px 6px",cursor:"pointer",
-                        borderRight:di<5?"1px solid "+T.border:"none",
-                        position:"relative",background:rawVal?(rawVal.tipo==="os"?T.blueLo:T.accentLo):T.bg,
-                        transition:"background .15s"
-                      }}
-                      onMouseOver={e=>e.currentTarget.style.background=val?(val.tipo==="os"?T.blueLo:T.accentLo):T.card}
-                      onMouseOut={e=>e.currentTarget.style.background=val?(val.tipo==="os"?T.blueLo:T.accentLo):T.bg}>
-                      {val&&(
-                        <div style={{fontSize:11,
-                          color:rawVal&&rawVal.tipo==="os"?T.blue:T.accent,
-                          fontWeight:600,lineHeight:1.3,wordBreak:"break-word"}}>
-                          {rawVal&&rawVal.tipo==="os"?"🔗 ":""}{rawVal&&rawVal.label||rawVal}
+      {vista==="geral" && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <button onClick={()=>setInicio(i=>i-1)} aria-label="Semana anterior" style={{background:T.surface,border:"1px solid "+T.border,borderRadius:8,color:T.text,width:38,height:38,fontSize:18,cursor:"pointer"}}>‹</button>
+            <div style={{flex:1,textAlign:"center",fontSize:13,fontWeight:800,color:T.text}}>{fmtDiaMes(getSemana(inicio)[0])} a {fmtDiaMes(getSemana(inicio+2)[5])}</div>
+            <button onClick={()=>setInicio(i=>i+1)} aria-label="Próximas semanas" style={{background:T.surface,border:"1px solid "+T.border,borderRadius:8,color:T.text,width:38,height:38,fontSize:18,cursor:"pointer"}}>›</button>
+            <button onClick={()=>setInicio(0)} style={{background:"transparent",border:"1px solid "+T.border,borderRadius:8,color:T.sub,height:38,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Hoje</button>
+          </div>
+          {[0,1,2].map(w=>{
+            const off = inicio+w, ds = getSemana(off);
+            const nomeSem = off===0 ? "SEMANA ATUAL" : off===1 ? "PRÓXIMA SEMANA" : off===2 ? "TERCEIRA SEMANA" : off===-1 ? "SEMANA PASSADA" : "SEMANA DE "+fmtDiaMes(ds[0]);
+            return (
+              <div key={off} style={{marginBottom:18}}>
+                <div style={{background:T.accent,borderRadius:"8px 8px 0 0",padding:"6px 12px",fontSize:11,fontWeight:900,color:"#000",textAlign:"center",letterSpacing:1}}>{nomeSem}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",border:"1px solid "+T.border,borderTop:"none",borderRadius:"0 0 8px 8px",overflow:"hidden"}}>
+                  {ds.map((d,i)=>{
+                    const iso = isoLocal(d), its = doDia(iso);
+                    return (
+                      <div key={iso} onClick={()=>abrirDia(iso)} style={{cursor:"pointer",minWidth:0,borderRight:i<5?"1px solid "+T.border:"none",background:iso===hoje?T.accentLo:T.bg}}>
+                        <div style={{padding:"5px 2px",textAlign:"center",background:T.surface,borderBottom:"1px solid "+T.border}}>
+                          <div style={{fontSize:10,fontWeight:800,color:T.accent}}>{DIAS[i]}</div>
+                          <div style={{fontSize:10,color:iso===hoje?T.text:T.muted}}>{fmtDiaMes(d)}</div>
                         </div>
-                      )}
-                      {rawVal&&(
-                        <button onClick={e=>{
-                          e.stopPropagation();
-                          salvar(key,"");
-                          toast("Removido da agenda!");
-                        }} style={{
-                          position:"absolute",top:2,right:2,
-                          background:T.red,border:"none",borderRadius:4,
-                          color:"#fff",cursor:"pointer",padding:"2px 6px",
-                          fontSize:10,fontWeight:700,zIndex:10
-                        }}>✕</button>
-                      )}
-                    </div>
-                  );
-                })}
+                        <div style={{padding:3,minHeight:64}}>
+                          {its.map(it=>{
+                            const os = it.tipo==="os";
+                            return (
+                              <div key={it.key} style={{background:os?T.blueLo:T.accentLo,borderLeft:"3px solid "+(os?T.blue:T.accent),borderRadius:4,padding:"3px 4px",marginBottom:3,overflow:"hidden"}}>
+                                <div style={{fontSize:10,fontWeight:900,color:os?T.blue:T.accent}}>{it.hora||"--:--"}</div>
+                                <div style={{fontSize:10.5,fontWeight:700,color:T.text,lineHeight:1.2,wordBreak:"break-word",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{it.nome||"Sem nome"}</div>
+                                {it.servico && <div style={{fontSize:9.5,color:T.sub,lineHeight:1.2,wordBreak:"break-word",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{it.servico}</div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            ))}
-          </div>
-        );
-      })}
-
-      {/* Modal editar slot */}
-      {modal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:T.surface,border:"1px solid "+T.border,borderRadius:16,
-            width:"100%",maxWidth:360,padding:20}}>
-            <div style={{fontWeight:700,color:T.text,marginBottom:4}}>
-              {modal && (()=>{
-                const [date,slot] = modal.split("_");
-                const d = new Date(date+"T12:00:00");
-                return d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"});
-              })()}
-            </div>
-            <div style={{fontSize:12,color:T.muted,marginBottom:14}}>Clique para agendar</div>
-            <textarea
-              value={inputVal}
-              onChange={e=>setInputVal(e.target.value)}
-              autoFocus
-              placeholder="Ex: João Silva — Insulfilme&#10;Placa: ABC1234"
-              rows={3}
-              style={{width:"100%",background:T.bg,border:"1px solid "+T.border,borderRadius:8,
-                color:T.text,padding:"10px 12px",fontSize:14,fontFamily:"inherit",
-                resize:"none",boxSizing:"border-box",colorScheme:"dark",outline:"none"}}
-            />
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:12}}>
-              <Btn v="ghost" onClick={()=>setModal(null)}>Cancelar</Btn>
-              <Btn v="red" onClick={limpar}>🗑 Limpar</Btn>
-              <Btn onClick={confirmar}>✅ Salvar</Btn>
-            </div>
-          </div>
+            );
+          })}
+          <div style={{fontSize:12,color:T.muted,textAlign:"center"}}>Toque em um dia para ver os detalhes, editar e gerar o comprovante.</div>
         </div>
       )}
+
+      {vista==="dia" && (
+        <div>
+      {/* Semana */}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <button onClick={()=>irSemana(-1)} aria-label="Semana anterior" style={{background:T.surface,border:"1px solid "+T.border,borderRadius:8,color:T.text,width:38,height:38,fontSize:18,cursor:"pointer"}}>‹</button>
+        <div style={{flex:1,textAlign:"center"}}>
+          <div style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtDiaMes(dias[0])} a {fmtDiaMes(dias[5])}</div>
+          {rotuloSemana && <div style={{fontSize:11,color:T.muted}}>{rotuloSemana}</div>}
+        </div>
+        <button onClick={()=>irSemana(1)} aria-label="Próxima semana" style={{background:T.surface,border:"1px solid "+T.border,borderRadius:8,color:T.text,width:38,height:38,fontSize:18,cursor:"pointer"}}>›</button>
+        <button onClick={irHoje} style={{background:"transparent",border:"1px solid "+T.border,borderRadius:8,color:T.sub,height:38,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Hoje</button>
+      </div>
+
+      {/* Dias */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:14}}>
+        {dias.map((d,i)=>{
+          const iso = isoLocal(d), sel = iso===diaAtual, qtd = doDia(iso).length;
+          return (
+            <button key={iso} onClick={()=>setDiaSel(iso)} style={{
+              position:"relative",padding:"8px 2px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"center",
+              border:"1px solid "+(sel?T.accent:(iso===hoje?T.sub:T.border)),
+              background:sel?T.accentLo:T.surface,color:sel?T.accent:T.sub}}>
+              <div style={{fontSize:10,fontWeight:800}}>{DIAS[i]}</div>
+              <div style={{fontSize:13,fontWeight:700,color:sel?T.accent:T.text}}>{fmtDiaMes(d)}</div>
+              <div style={{height:14,marginTop:2}}>
+                {qtd>0 && <span style={{display:"inline-block",minWidth:16,padding:"0 5px",borderRadius:8,background:sel?T.accent:T.card,color:sel?"#000":T.sub,fontSize:10,fontWeight:800,lineHeight:"14px"}}>{qtd}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Dia selecionado */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8}}>
+        <div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text}}>{dataExtenso(diaAtual).replace(/, \d{2}\/\d{2}\/\d{4}$/,"")} · {diaAtual.slice(8,10)}/{diaAtual.slice(5,7)}</div>
+          <div style={{fontSize:12,color:T.muted}}>{itensDia.length===0?"Nenhum agendamento":itensDia.length===1?"1 agendamento":itensDia.length+" agendamentos"}</div>
+        </div>
+        <Btn onClick={novo}>＋ Agendar</Btn>
+      </div>
+
+      {itensDia.length===0 && (
+        <div style={{border:"1px dashed "+T.border,borderRadius:12,padding:"28px 16px",textAlign:"center",color:T.muted,fontSize:13}}>
+          Dia livre. Toque em <b style={{color:T.accent}}>＋ Agendar</b> para marcar um cliente.
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {itensDia.map(it=>{
+          const os = it.tipo==="os";
+          const cor = os ? T.blue : T.accent;
+          return (
+            <div key={it.key} style={{display:"flex",gap:12,background:T.surface,border:"1px solid "+T.border,borderLeft:"4px solid "+cor,borderRadius:12,padding:"12px 12px 10px"}}>
+              <div style={{width:58,flexShrink:0,textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:900,color:it.hora?cor:T.muted,lineHeight:1.1}}>{it.hora||"—"}</div>
+                {os && <div style={{fontSize:10,fontWeight:800,color:T.blue,marginTop:4}}>🔗 OS</div>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:16,fontWeight:800,color:T.text,wordBreak:"break-word"}}>{it.nome||"Sem nome"}</div>
+                {it.servico && <div style={{fontSize:13,color:T.sub,marginTop:2,wordBreak:"break-word"}}>🔧 {it.servico}</div>}
+                {it.obs && <div style={{fontSize:12,color:T.muted,marginTop:4,wordBreak:"break-word"}}>📝 {it.obs}</div>}
+                {it.legado && <div style={{fontSize:10,color:T.muted,marginTop:4}}>Agendamento antigo — toque em Editar para organizar nome e serviço.</div>}
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+                  <Btn sz="sm" v="orange" onClick={()=>setComprovante(it)}>📤 Comprovante</Btn>
+                  {os && <Btn sz="sm" v="ghost" onClick={()=>abrirOS(it)} style={{color:T.blue,borderColor:T.blue}}>Abrir OS</Btn>}
+                  <Btn sz="sm" v="ghost" onClick={()=>editar(it)}>✏️ Editar</Btn>
+                  <Btn sz="sm" v="ghost" onClick={()=>remover(it)} style={{color:T.red,borderColor:T.red}}>🗑</Btn>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+        </div>
+      )}
+
+      {/* Formulário */}
+      {form && (
+        <Modal title={form.keyOrig ? "✏️ Editar agendamento" : "📅 Novo agendamento"} onClose={()=>setForm(null)} w={420}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:10}}>
+              <div><label style={lab}>Data</label>
+                <input type="date" value={form.data} onChange={e=>setForm({...form,data:e.target.value})} style={campo} /></div>
+              <div><label style={lab}>Horário</label>
+                <input type="time" value={form.hora} onChange={e=>setForm({...form,hora:e.target.value})} style={campo} /></div>
+            </div>
+            {form.tipo==="os" ? (
+              <div style={{background:T.blueLo,border:"1px solid "+T.blue+"55",borderRadius:8,padding:"10px 12px",fontSize:13,color:T.blue}}>
+                🔗 Vinculado à OS: <b>{form.labelOS}</b>
+              </div>
+            ) : (<>
+              <div><label style={lab}>Nome</label>
+                <input type="text" value={form.nome} autoFocus onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome do cliente" style={campo} /></div>
+              <div><label style={lab}>Serviço</label>
+                <input type="text" value={form.servico} onChange={e=>setForm({...form,servico:e.target.value})} placeholder="Ex.: Insulfilm completo" style={campo} /></div>
+            </>)}
+            <div><label style={lab}>Obs</label>
+              <textarea value={form.obs} onChange={e=>setForm({...form,obs:e.target.value})} rows={3} placeholder="Veículo, placa, detalhes..." style={{...campo,resize:"none"}} /></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <Btn v="ghost" onClick={()=>setForm(null)} full>Cancelar</Btn>
+              <Btn onClick={salvarForm} full>✅ Salvar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {comprovante && <ModalComprovanteAgenda item={comprovante} onClose={()=>setComprovante(null)} />}
     </div>
   );
 }
