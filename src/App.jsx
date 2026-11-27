@@ -1165,7 +1165,8 @@ function ModalAgendarOS({ os, onClose }) {
     Object.keys(agenda).forEach(k=>{ if (agenda[k] && agenda[k].tipo==="os" && agenda[k].osId===os.id) delete agenda[k]; });
     const key = data+"_"+proximoSlot(agenda, data);
     const label = (os.cliente||os.placa||"OS")+" — "+(os.servicos||os.veiculo||"");
-    agenda[key] = { tipo:"os", osId:os.id, label:label.slice(0,60), hora };
+    const carro = [os.veiculo, os.placa].filter(Boolean).join(" · ");
+    agenda[key] = { tipo:"os", osId:os.id, label:label.slice(0,60), carro, hora };
     gravarAgenda(agenda);
     toast("Agendado para "+d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"})+(hora?" às "+hora:""));
     onClose();
@@ -2947,11 +2948,11 @@ function normalizarAgenda(key, raw) {
   const base = { key, data, slot: parseInt(slotStr,10)||0, raw };
   if (raw && typeof raw==="object" && raw.tipo==="os") {
     const label = String(raw.label||""); const i = label.indexOf(" — ");
-    return { ...base, tipo:"os", osId:raw.osId, hora:raw.hora||"", obs:raw.obs||"",
+    return { ...base, tipo:"os", osId:raw.osId, hora:raw.hora||"", obs:raw.obs||"", carro:raw.carro||"", lugar:"veiculo", endereco:"",
       nome: i>-1 ? label.slice(0,i) : label, servico: i>-1 ? label.slice(i+3) : "" };
   }
   if (raw && typeof raw==="object" && raw.tipo==="ag") {
-    return { ...base, tipo:"ag", hora:raw.hora||"", nome:raw.nome||"", servico:raw.servico||"", obs:raw.obs||"" };
+    return { ...base, tipo:"ag", hora:raw.hora||"", nome:raw.nome||"", carro:raw.carro||"", lugar:raw.lugar==="local"?"local":"veiculo", endereco:raw.endereco||"", servico:raw.servico||"", obs:raw.obs||"" };
   }
   // texto livre antigo: tenta separar o horário (ex.: "Higor corolla fechadura 8:00")
   let texto = String((raw && typeof raw==="object" ? (raw.label||"") : raw) || "").trim();
@@ -2963,7 +2964,7 @@ function normalizarAgenda(key, raw) {
     hora = String(ultimo[1]).padStart(2,"0")+":"+(ultimo[2]||"00");
     texto = (texto.slice(0,ultimo.index)+" "+texto.slice(ultimo.index+ultimo[0].length)).replace(/\s+/g," ").trim();
   }
-  return { ...base, tipo:"ag", legado:true, hora, nome:texto, servico:"", obs:"" };
+  return { ...base, tipo:"ag", legado:true, hora, nome:texto, carro:"", lugar:"veiculo", endereco:"", servico:"", obs:"" };
 }
 
 const ordenarAgenda = (a,b) => (a.hora||"99:99").localeCompare(b.hora||"99:99") || a.slot-b.slot;
@@ -2980,6 +2981,7 @@ function ModalComprovanteAgenda({ item, onClose }) {
     "📅 "+dataTxt,
     "⏰ Horário: "+horaTxt,
     "👤 Nome: "+(item.nome||"-"),
+    item.lugar==="local" ? (item.endereco ? "🏠 Endereço: "+item.endereco : null) : (item.carro ? "🚗 Carro: "+item.carro : null),
     item.servico ? "🔧 Serviço: "+item.servico : null,
     item.obs ? "📝 Obs: "+item.obs : null,
     "",
@@ -3022,6 +3024,9 @@ body{font-family:Arial,sans-serif;padding:12px;background:#fff;color:#111;font-s
   <div class="titulo">Comprovante de agendamento</div>
   <div class="quando"><div class="dia">${escH(dataTxt)}</div><div class="hora">${escH(horaTxt)}</div></div>
   <div class="lin"><span class="lb">Nome</span><span class="vl">${escH(item.nome||"-")}</span></div>
+  ${item.lugar==="local"
+    ? (item.endereco ? `<div class="lin"><span class="lb">Endereço</span><span class="vl">${escH(item.endereco)}</span></div>` : "")
+    : (item.carro ? `<div class="lin"><span class="lb">Carro</span><span class="vl">${escH(item.carro)}</span></div>` : "")}
   ${item.servico ? `<div class="lin"><span class="lb">Serviço</span><span class="vl">${escH(item.servico)}</span></div>` : ""}
   ${item.obs ? `<div class="lin"><span class="lb">Obs</span><span class="vl obs">${escH(item.obs)}</span></div>` : ""}
   <div class="aviso">Dúvidas ou necessidade de remarcar? Fale com a gente pelo WhatsApp (11) 9.3922-8558.</div>
@@ -3140,20 +3145,24 @@ function AbaAgenda() {
     const d = new Date(base+"T12:00:00"); if (d.getDay()===0) d.setDate(d.getDate()+1);
     return isoLocal(d);
   };
-  const novo = () => setForm({ keyOrig:null, tipo:"ag", data:dataPadrao(), hora:"", nome:"", servico:"", obs:"" });
+  const novo = () => setForm({ keyOrig:null, tipo:"ag", data:dataPadrao(), hora:"", nome:"", lugar:"veiculo", carro:"", endereco:"", servico:"", obs:"" });
   const editar = (it) => setForm({ keyOrig:it.key, tipo:it.tipo, osId:it.osId, labelOS: it.tipo==="os" ? String(it.raw.label||"") : "",
-    data:it.data, hora:it.hora, nome:it.nome, servico:it.servico, obs:it.obs });
+    data:it.data, hora:it.hora, nome:it.nome, lugar:it.lugar||"veiculo", carro:it.carro||"", endereco:it.endereco||"", servico:it.servico, obs:it.obs });
 
   const salvarForm = () => {
     if (!form.data) { toast("Escolha a data."); return; }
     if (new Date(form.data+"T12:00:00").getDay()===0) { toast("A agenda não tem domingo. Escolha de segunda a sábado."); return; }
     if (form.tipo==="ag" && !form.nome.trim()) { toast("Informe o nome do cliente."); return; }
+    if (form.tipo==="ag" && form.lugar==="local" && !form.endereco.trim()) { toast("Informe o endereço."); return; }
+    if (form.tipo==="ag" && form.lugar!=="local" && !form.carro.trim()) { toast("Informe o carro."); return; }
     const obj = { ...agenda };
     if (form.keyOrig) delete obj[form.keyOrig];
     const key = (form.keyOrig && form.keyOrig.split("_")[0]===form.data) ? form.keyOrig : form.data+"_"+proximoSlot(obj, form.data);
     obj[key] = form.tipo==="os"
-      ? { tipo:"os", osId:form.osId, label:form.labelOS, hora:form.hora, obs:form.obs.trim() }
-      : { tipo:"ag", nome:form.nome.trim(), servico:form.servico.trim(), hora:form.hora, obs:form.obs.trim() };
+      ? { tipo:"os", osId:form.osId, label:form.labelOS, carro:form.carro.trim(), hora:form.hora, obs:form.obs.trim() }
+      : form.lugar==="local"
+        ? { tipo:"ag", lugar:"local", nome:form.nome.trim(), endereco:form.endereco.trim(), servico:form.servico.trim(), hora:form.hora, obs:form.obs.trim() }
+        : { tipo:"ag", nome:form.nome.trim(), carro:form.carro.trim(), servico:form.servico.trim(), hora:form.hora, obs:form.obs.trim() };
     gravar(obj);
     setSemana(semanaDaData(form.data)); setDiaSel(form.data);
     setForm(null);
@@ -3215,6 +3224,7 @@ function AbaAgenda() {
                               <div key={it.key} style={{background:os?T.blueLo:T.accentLo,borderLeft:"3px solid "+(os?T.blue:T.accent),borderRadius:4,padding:"3px 4px",marginBottom:3,overflow:"hidden"}}>
                                 <div style={{fontSize:10,fontWeight:900,color:os?T.blue:T.accent}}>{it.hora||"--:--"}</div>
                                 <div style={{fontSize:10.5,fontWeight:700,color:T.text,lineHeight:1.2,wordBreak:"break-word",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{it.nome||"Sem nome"}</div>
+                                {(it.lugar==="local" ? it.endereco : it.carro) && <div style={{fontSize:9.5,fontWeight:700,color:T.sub,lineHeight:1.2,wordBreak:"break-word",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{it.lugar==="local" ? "🏠 "+it.endereco : it.carro}</div>}
                                 {it.servico && <div style={{fontSize:9.5,color:T.sub,lineHeight:1.2,wordBreak:"break-word",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{it.servico}</div>}
                               </div>
                             );
@@ -3290,9 +3300,10 @@ function AbaAgenda() {
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:16,fontWeight:800,color:T.text,wordBreak:"break-word"}}>{it.nome||"Sem nome"}</div>
+                {(it.lugar==="local" ? it.endereco : it.carro) && <div style={{fontSize:14,fontWeight:700,color:T.sub,marginTop:2,wordBreak:"break-word"}}>{it.lugar==="local" ? "🏠 "+it.endereco : "🚗 "+it.carro}</div>}
                 {it.servico && <div style={{fontSize:13,color:T.sub,marginTop:2,wordBreak:"break-word"}}>🔧 {it.servico}</div>}
                 {it.obs && <div style={{fontSize:12,color:T.muted,marginTop:4,wordBreak:"break-word"}}>📝 {it.obs}</div>}
-                {it.legado && <div style={{fontSize:10,color:T.muted,marginTop:4}}>Agendamento antigo — toque em Editar para organizar nome e serviço.</div>}
+                {it.legado && <div style={{fontSize:10,color:T.muted,marginTop:4}}>Agendamento antigo — toque em Editar para organizar nome, carro e serviço.</div>}
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
                   <Btn sz="sm" v="orange" onClick={()=>setComprovante(it)}>📤 Comprovante</Btn>
                   {os && <Btn sz="sm" v="ghost" onClick={()=>abrirOS(it)} style={{color:T.blue,borderColor:T.blue}}>Abrir OS</Btn>}
@@ -3318,18 +3329,33 @@ function AbaAgenda() {
               <div><label style={lab}>Horário</label>
                 <input type="time" value={form.hora} onChange={e=>setForm({...form,hora:e.target.value})} style={campo} /></div>
             </div>
-            {form.tipo==="os" ? (
+            {form.tipo==="os" ? (<>
               <div style={{background:T.blueLo,border:"1px solid "+T.blue+"55",borderRadius:8,padding:"10px 12px",fontSize:13,color:T.blue}}>
                 🔗 Vinculado à OS: <b>{form.labelOS}</b>
               </div>
-            ) : (<>
+              <div><label style={lab}>Carro</label>
+                <input type="text" value={form.carro} onChange={e=>setForm({...form,carro:e.target.value})} placeholder="Ex.: Corolla 2020 prata" style={campo} /></div>
+            </>) : (<>
+              <div><label style={lab}>Tipo</label>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {[["veiculo","🚗 Veículo"],["local","🏠 Residência / local"]].map(([v,t])=>(
+                    <button key={v} type="button" onClick={()=>setForm({...form,lugar:v})}
+                      style={{padding:"10px 6px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:form.lugar===v?800:500,
+                        border:"1px solid "+(form.lugar===v?T.accent:T.border),background:form.lugar===v?T.accentLo:T.bg,color:form.lugar===v?T.accent:T.sub}}>{t}</button>
+                  ))}
+                </div></div>
               <div><label style={lab}>Nome</label>
                 <input type="text" value={form.nome} autoFocus onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome do cliente" style={campo} /></div>
+              {form.lugar==="local"
+                ? <div><label style={lab}>Endereço</label>
+                    <input type="text" value={form.endereco} onChange={e=>setForm({...form,endereco:e.target.value})} placeholder="Rua, número, bairro" style={campo} /></div>
+                : <div><label style={lab}>Carro</label>
+                    <input type="text" value={form.carro} onChange={e=>setForm({...form,carro:e.target.value})} placeholder="Ex.: Corolla 2020 prata" style={campo} /></div>}
               <div><label style={lab}>Serviço</label>
                 <input type="text" value={form.servico} onChange={e=>setForm({...form,servico:e.target.value})} placeholder="Ex.: Insulfilm completo" style={campo} /></div>
             </>)}
             <div><label style={lab}>Obs</label>
-              <textarea value={form.obs} onChange={e=>setForm({...form,obs:e.target.value})} rows={3} placeholder="Veículo, placa, detalhes..." style={{...campo,resize:"none"}} /></div>
+              <textarea value={form.obs} onChange={e=>setForm({...form,obs:e.target.value})} rows={3} placeholder="Detalhes, placa, observações..." style={{...campo,resize:"none"}} /></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <Btn v="ghost" onClick={()=>setForm(null)} full>Cancelar</Btn>
               <Btn onClick={salvarForm} full>✅ Salvar</Btn>
